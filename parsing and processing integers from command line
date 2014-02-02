@@ -11,6 +11,9 @@
  Comments:
 
  This runs as a stand-alone program that accepts a single line of input from the console or command line.
+ 
+ It accepts a series of scores (unsigned integers from 0 to 100) separated by at least one comma (,) or space
+ and outputs the number of scores, minimum score, maximum score and average score (to 0.01 resolution).
 
  The only functions called are puts, scanf and printf.
 
@@ -45,10 +48,10 @@ int main(void) {
 	scoreOutOfRange = false;
 
 	// Prompt user for input and skip past any leading insignificant characters (' ' or ',')
-	puts("enter score:");
+	puts("enter scores, unsigned, range from 0 to 100, separated by at least one comma or space, all on one line:");
 	do {
 		scanf("%c", &input);
-	} while (input==' ' ^ input==',');
+	} while (input==' ' || input==',');
 
 	// Process input, character by character, until '\n' (newline) is encountered.
 	while (input != '\n') {
@@ -85,7 +88,7 @@ int main(void) {
 					//
 					// reset for processing next score on input line (if there is one)
 					hasAtLeastOneDigit = false;
-					while (input != '\n' && (input==' ' ^ input==',' )) {
+					while (input != '\n' && (input==' ' || input==',' )) {
 						scanf("%c", &input);
 
 					}
@@ -119,7 +122,7 @@ int main(void) {
 				break;
 
 			}
-		} else if (invalidInput ^ scoreOutOfRange) {
+		} else if (invalidInput || scoreOutOfRange) {
 			// recognize one of the abort processing conditions, unexpected character or score out of range
 			// do not process remaining input characters
 			// break out and onto termination path
