@@ -1,0 +1,66 @@
+inputFile.txt opened for read access
+outputFile.txt opened for write access
+{ onto stack
+	x is ignored
+	+ is ignored
+	( onto stack
+		y is ignored
+		- is ignored
+		[ onto stack
+			a is ignored
+			+ is ignored
+			b is ignored
+		] matches opening delimiter [ popped from stack
+	) matches opening delimiter ( popped from stack
+	* is ignored
+	( onto stack
+		c is ignored
+		- is ignored
+		[ onto stack
+			( onto stack
+				d is ignored
+				+ is ignored
+				e is ignored
+			) matches opening delimiter ( popped from stack
+		] matches opening delimiter [ popped from stack
+		+ is ignored
+		k is ignored
+	) matches opening delimiter ( popped from stack
+} matches opening delimiter { popped from stack
+/ is ignored
+( onto stack
+	h is ignored
+	- is ignored
+	( onto stack
+		j is ignored
+		- is ignored
+		( onto stack
+			k is ignored
+			- is ignored
+			[ onto stack
+				l is ignored
+				- is ignored
+				n is ignored
+			] matches opening delimiter [ popped from stack
+		) matches opening delimiter ( popped from stack
+	) matches opening delimiter ( popped from stack
+) matches opening delimiter ( popped from stack
++ is ignored
+{ onto stack
+	u is ignored
+	+ is ignored
+	[ onto stack
+		m is ignored
+		* is ignored
+		( onto stack
+			p is ignored
+			- is ignored
+			q is ignored
+		) matches opening delimiter ( popped from stack
+	] matches opening delimiter [ popped from stack
+	/ is ignored
+	r is ignored
+} matches opening delimiter { popped from stack
+encountered EOF from inputFile.txt
+expression is valid? true
+inputFile.txt was closed without error
