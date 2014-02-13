@@ -1,0 +1,259 @@
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              University of California Extension, Santa Cruz                */
+/*                                                                            */
+/*                       Advanced C Programming                               */
+/*                                                                            */
+/*              Instructor: Rajainder A. Yeldandi                             */
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Assignment Number: 08                                         */
+/*                                                                            */
+/*                                                                            */
+/*              Topic: Array Manipulations                                    */
+/*                                                                            */
+/*              Filename: 3948-056-RonaldInselberg-08-Stacks.c                */
+/*                                                                            */
+/*              Date: February 13, 2014                                       */
+/*                                                                            */
+/*              Objective: Demonstrate a stack (LIFO) application             */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/*  The arithmetic expression is read from the input file "inputFile.txt".    */
+/*  The output is written to "outputFile.txt". All user interaction is via    */
+/*  the console.                                                              */
+/*                                                                            */
+/*  The program ignores all input characters except the scope delimiting      */
+/*  characters '(', ')', '[', ']', '{', and '}'. The program determines       */
+/*  whether the expression is valid (true) or not valid (false) only by       */
+/*  checking for the proper syntax of nested scopes, from no nesting at all,  */
+/*  all the way up to 100 nested expressions. The program requires that the   */
+/*  opening and closing scope delimiters must be matched; so '(' must be      */
+/*  matched with ')', '[' with ']' and '{' with '}'.                          */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+// other preprocessor directives
+#define MAXSTACK 100;
+#define EMPTYSTACK -1
+
+// global declaration, purpose is to allow for stack under/overflow messages to output file
+// (program main is constructed so as not to be able to produce the stack underflow message; exits before that point)
+FILE *outputFile = NULL;	// pointer to output file
+
+// global declaration, LIFO (stack), each element is a char (character)
+typedef struct stack {
+	int top;
+	char stackElement[100];	// does not accept MAXSTACK for 100.. Eclipse bug..?
+} STACK;	// requires STACK definition before prototype function declarations (just my version of Eclipse?)
+
+// prototype function declarations
+bool stackIsEmpty(struct stack *);
+char popStack(struct stack *);
+void pushStack(struct stack *, char);
+bool isScopeOpen(char);
+bool isScopeClose(char);
+bool matchingScope(char, char);
+
+// begin function definitions
+bool stackIsEmpty(STACK *pointerToStack) {
+	if (pointerToStack->top==EMPTYSTACK) {
+		return true;
+	} else
+		return false;
+}
+
+char popStack(STACK *pointerToStack) {
+	if (stackIsEmpty(pointerToStack)) {
+		const char * const stackUnderflowMessage = "stack underflow\n";
+		printf(stackUnderflowMessage);
+		fprintf(outputFile, stackUnderflowMessage);
+		exit(-1);
+
+	} else {
+		return(pointerToStack->stackElement[pointerToStack->top--]);
+	}
+}
+
+void pushStack(STACK *pointerToStack, char c) {
+	if (pointerToStack->top == 100 - 1)  {	// does not accept MAXSTACK for 100.. Eclipse bug..?
+		const char * const stackOverflowMessage = "stack overflow\n";
+		printf(stackOverflowMessage);
+		fprintf(outputFile, stackOverflowMessage);
+		exit(-1);
+
+	}
+	pointerToStack->stackElement[++(pointerToStack->top)] = c;
+	return;
+}
+
+bool isScopeOpen(char c) {
+	if (c=='(' || c=='[' || c=='{') {
+		return true;
+	} else {
+		return false;
+	}
+} // alternate implementation would be a switch statement
+
+bool isScopeClose(char c) {
+	if (c==')' || c==']' || c=='}') {
+		return true;
+	} else {
+		return false;
+	}
+} // alternate implementation would be a switch statement
+
+bool matchingScope(char charFromStack, char nextChar) {
+	if (charFromStack=='(' && nextChar==')' ) {
+		return true;
+	} else 	if (charFromStack=='[' && nextChar==']' ) {
+		return true;
+	} else 	if (charFromStack=='{' && nextChar=='}' ) {
+		return true;
+	} else
+		return false;
+}
+
+// function main begins program execution
+int main(void) {
+
+	// flag the expression as valid (initial condition)
+	bool expressionIsValid = true;
+
+	// initialize the stack to "empty"
+	STACK s, *pointerToStack;
+	s.top = EMPTYSTACK;
+	pointerToStack = &s;
+
+	int exitCondition = EXIT_SUCCESS;	// initial condition
+	int howMany = 0;					// characters processed, count (initial condition)
+	int nread;							// char read from input file (1), EOF encountered (EOF), otherwise(?)
+
+	// number of output tabs before printing scope delimiter determined by position on stack (nesting of scopes)
+	int tabCount;
+
+	char nextChar;						// next input character to be processed
+	char fromStack;						// save last character popped from stack, needed for output
+	FILE *inputFile;					// pointer to input file
+
+	// some messages for file operations, avoids duplicating of strings
+	const char * const inputFileOpenedMessage = "inputFile.txt opened for read access\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n";
+	const char * const outputFileOpenMessage = "outputFile.txt opened for write access\n";
+	const char * const outputFileCloseErrorMessage = "file close error on outputFile.txt\n";
+	const char * const outputFileCloseMessage = "outputFile.txt was closed without error\n";
+
+	if ((inputFile = fopen("inputFile.txt", "r"))==NULL) {
+		printf("inputFile.txt could not be opened with read access\n");
+		exitCondition = -1;
+	} else {
+		printf("%s", inputFileOpenedMessage);
+		if ((outputFile  = fopen("outputFile.txt", "w"))==NULL) {
+			printf ("outputFile.txt could not be opened with write access\n");
+			if (fclose(inputFile) != 0) {
+				printf("%s", inputFileCloseErrorMessage);
+				exitCondition = -1;
+			} else {
+				printf("%s", inputFileCloseMessage);
+			}
+		} else {
+			fprintf(outputFile, inputFileOpenedMessage);
+			printf(outputFileOpenMessage);
+			fprintf(outputFile, outputFileOpenMessage);
+			//
+			// ready to start processing characters from input file
+			while (1== (nread = fscanf(inputFile,"%c,", &nextChar))) {
+				howMany++;	// count each input character as it is processed
+				if (isScopeOpen(nextChar)) {
+					pushStack(pointerToStack, nextChar);	// encountered an opening scope delimiter '(', '[', or '{'
+					for (tabCount = 1; tabCount <= pointerToStack->top; tabCount++) {
+						fprintf(outputFile, "\t");
+					}
+					fprintf(outputFile, "%c onto stack\n", nextChar);	// echo scope delimiter to output file, tabs for nesting
+				} else if (isScopeClose(nextChar)) {
+					// encountered a closing scope delimiter ')', ']', or '}'
+					for (tabCount = 1; tabCount <= pointerToStack->top; tabCount++) {
+						fprintf(outputFile, "\t");
+					}	// tab characters to display nesting
+					if (stackIsEmpty(pointerToStack)) {
+						fprintf(outputFile, "%c syntax error, unbalanced closing scope delimiter\n", nextChar);
+						expressionIsValid = false;	// syntax error, no opening scope delimiter on stack to check against
+						break;	// finished processing input characters
+
+					} else if(!matchingScope(fromStack = popStack(pointerToStack), nextChar)) {
+						fprintf(outputFile, "%c syntax error, mismatched closing scope delimiter with %c\n", nextChar, fromStack);
+						expressionIsValid = false;	// syntax error, mismatched opening and closing scope delimiters
+						break;	// finished processing input characters
+
+					} else {
+						fprintf(outputFile, "%c matches opening delimiter %c popped from stack\n", nextChar, fromStack);	// echo scope delimiter to output file, tabs for nesting
+					}
+				} else {
+					// ignore any input character that is not a scope delimiter; echo char (unless it's a space or newline char)
+					if (nextChar != ' ' && nextChar != '\n' ) {
+						for (tabCount = 0; tabCount <= pointerToStack->top; tabCount++) {
+							fprintf(outputFile, "\t");
+						}	// tab characters to display nesting
+						fprintf(outputFile, "%c is ignored\n", nextChar);
+					}
+				}
+			}	// end of processing input characters loop
+			//
+			if (ferror(inputFile)) {
+				printf("file error on inputFile.txt\n");
+				fprintf(outputFile, "file error on inputFile.txt\n");
+				exitCondition = -1;
+			} else if (nread != EOF) {
+				printf("encountered unexpected data from inputFile.txt\n");	// program should never produce this
+				fprintf(outputFile, "encountered unexpected data from inputFile.txt\n");
+				exitCondition = -1;
+			} else {
+				printf("encountered EOF from inputFile.txt\n");
+				fprintf(outputFile, "encountered EOF from inputFile.txt\n");
+			}
+			if (howMany==0) {
+				printf("no characters were read in\n");
+				fprintf(outputFile, "no characters were read in\n");
+				expressionIsValid = false;	// syntax error, no input characters
+			} else if (!stackIsEmpty(pointerToStack)) {
+				expressionIsValid = false;	// syntax error, unmatched opening scope delimiter
+			} else {
+				// arithmetic expression is well formed with respect to scope delimiters and nesting
+			}
+			//
+			// print final result
+			printf("expression is valid? %s\n", expressionIsValid ? "true" : "false");
+			fprintf(outputFile, "expression is valid? %s\n", expressionIsValid ? "true" : "false");
+			//
+			// clean up by closing input and output files
+			if (fclose(inputFile) != 0) {
+				printf("%s", inputFileCloseErrorMessage);
+				fprintf(outputFile,"%s", inputFileCloseErrorMessage);
+				exitCondition = -1;
+			} else {
+				printf("%s", inputFileCloseMessage);
+				fprintf(outputFile, "%s", inputFileCloseMessage);
+			}
+			if (fclose(outputFile) != 0) {
+				printf("%s", outputFileCloseErrorMessage);
+				exitCondition = -1;
+			} else {
+				printf("%s", outputFileCloseMessage);
+				exitCondition = 0;
+			}
+		}
+		//
+		// log out message for user and terminate
+		printf("terminating with exit condition %i", exitCondition);
+		return(exitCondition);
+	}
+}
