@@ -34,6 +34,11 @@
 /*  opening and closing scope delimiters must be matched; so '(' must be      */
 /*  matched with ')', '[' with ']' and '{' with '}'.                          */
 /*                                                                            */
+/*  There is some remaining duplication of code and "overmuch" levels of      */
+/*  nested code blocks that could probably be improved by some judicious      */
+/*  refactoring of the program structure. Partitioning of the code into       */
+/*  additonal functions and function calls from main.                         */
+/*                                                                            */
 /******************************************************************************/
 
 // include files
