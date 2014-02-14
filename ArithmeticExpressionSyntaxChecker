@@ -34,10 +34,10 @@
 /*  opening and closing scope delimiters must be matched; so '(' must be      */
 /*  matched with ')', '[' with ']' and '{' with '}'.                          */
 /*                                                                            */
-/*  There is some remaining duplication of code and "overmuch" levels of      */
-/*  nested code blocks that could probably be improved by some judicious      */
-/*  refactoring of the program structure. Partitioning of the code into       */
-/*  additonal functions and function calls from main.                         */
+/*  My code in main could still be improved, using refactoring with           */
+/*  additional function definitions and function calls that would eliminate   */
+/*  the remaining duplication of code and improve some blocks in main where   */
+/*  the levels of nesting are deeper than it needs to be.                     */
 /*                                                                            */
 /******************************************************************************/
 
@@ -47,8 +47,8 @@
 #include <stdbool.h>
 
 // other preprocessor directives
-#define MAXSTACK 100;
-#define EMPTYSTACK -1
+#define MAXSTACK 100	// size of LIFO (stack)
+#define EMPTYSTACK -1	// value of stack.top when stack is empty
 
 // global declaration, purpose is to allow for stack under/overflow messages to output file
 // (program main is constructed so as not to be able to produce the stack underflow message; exits before that point)
@@ -57,13 +57,14 @@ FILE *outputFile = NULL;	// pointer to output file
 // global declaration, LIFO (stack), each element is a char (character)
 typedef struct stack {
 	int top;
-	char stackElement[100];	// does not accept MAXSTACK for 100.. Eclipse bug..?
-} STACK;	// requires STACK definition before prototype function declarations (just my version of Eclipse?)
+	char stackElement[MAXSTACK];
+} STACK;	// requires STACK definition before prototype function declarations
+			// this is the opposite order from what's shown on Lecture Slides, Chapter 20.pdf, page 6
 
 // prototype function declarations
-bool stackIsEmpty(struct stack *);
-char popStack(struct stack *);
-void pushStack(struct stack *, char);
+bool stackIsEmpty(STACK *);
+char popStack(STACK *);
+void pushStack(STACK *, char);
 bool isScopeOpen(char);
 bool isScopeClose(char);
 bool matchingScope(char, char);
@@ -89,7 +90,7 @@ char popStack(STACK *pointerToStack) {
 }
 
 void pushStack(STACK *pointerToStack, char c) {
-	if (pointerToStack->top == 100 - 1)  {	// does not accept MAXSTACK for 100.. Eclipse bug..?
+	if (pointerToStack->top == MAXSTACK - 1)  {
 		const char * const stackOverflowMessage = "stack overflow\n";
 		printf(stackOverflowMessage);
 		fprintf(outputFile, stackOverflowMessage);
