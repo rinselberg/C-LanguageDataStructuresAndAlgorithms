@@ -1,0 +1,344 @@
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*                       Advanced C Programming                               */
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Assignment Number: 09                                         */
+/*                                                                            */
+/*              Topic: Queue (FIFO) processing                                */
+/*                                                                            */
+/*              Filename: 3948-056-RonaldInselberg-09-Queues.c                */
+/*                                                                            */
+/*              Date: February 17, 2014                                       */
+/*                                                                            */
+/*              Objective: Demonstrate a queue (FIFO) application             */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/*              The input data is described by the regular expression         */
+/*              [ (E operand) | D ]*                                          */
+/*              where E signals that the next string (operand) is to be       */
+/*              added to the back of the queue (enqueue) and D signals        */
+/*              that the string that is at the front of the queue is to       */
+/*              removed from the queue (dequeue) and displayed as output      */
+/*              data.                                                         */
+/*                                                                            */
+/*              I decided to reuse the code from my previous assignment       */
+/*              as the starting point for this assignment, and I made use     */
+/*              of the stack (LIFO) data structure that I had already         */
+/*              implemented. I also found it necessary to implement some      */
+/*              dynamically allocated string data using malloc and free       */
+/*              function calls.                                               */
+/*                                                                            */
+/*              This is an improvement over my previous assignment, as I      */
+/*              factored the if...else blocks more intelligently than         */
+/*              before. So the code in main is more straightforward and       */
+/*              does not have as many levels of nesting as my previous        */
+/*              submission.                                                   */
+/*                                                                            */
+/*              I used more exit(-1) calls, which was the key here for me.    */
+/*              By terminating the program immediately from any error case,   */
+/*              I did not need as many else...if or else blocks as before.    */
+/*              Because I was not trying to process all the way through to    */
+/*              one common exit or return point at the very end of main.      */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+
+// preprocessor directives for stack implementation
+#define MAXSTACK 1		// size of LIFO (stack), only used to store one string "enqueue"
+#define EMPTYSTACK -1	// value of stack.top when stack is empty
+
+// global file pointer declaration, purpose is to allow for stack and queue under/overflow messages to output file
+FILE *outputFile = NULL;	// declare and initialize pointer to output file
+
+// global stack declaration, LIFO (stack), each element is a pointer to a string
+//
+typedef struct stack {
+	int top;
+	char **stackElement[MAXSTACK];
+} STACK;	// requires STACK definition before prototype function declarations
+// this is the opposite order from what's shown on Lecture Slides, Chapter 20.pdf, page 6
+
+// prototype stack function declarations
+//
+bool stackIsEmpty(STACK *);
+char * popStack(STACK *);
+void pushStack(STACK *, char *);
+
+
+// begin stack function definitions
+
+// test for stack empty condition
+bool stackIsEmpty(STACK *pointerToStack) {
+	if (pointerToStack->top==EMPTYSTACK) {
+		return true;
+	} else
+		return false;
+}
+
+// pop element from top of stack and return the string
+char * popStack(STACK *pointerToStack) {
+	if (stackIsEmpty(pointerToStack)) {
+		const char * const stackUnderflowMessage = "stack underflow\n";
+		printf(stackUnderflowMessage);
+		fprintf(outputFile, stackUnderflowMessage);
+		exit(-1);
+
+	}
+	return pointerToStack->stackElement[pointerToStack->top--];
+}
+
+// push string onto top of stack
+void pushStack(STACK *pointerToStack, char *s) {
+	if (pointerToStack->top == MAXSTACK - 1)  {
+		const char * const stackOverflowMessage = "stack overflow\n";
+		printf(stackOverflowMessage);
+		fprintf(outputFile, stackOverflowMessage);
+		exit(-1);
+
+	}
+	pointerToStack->stackElement[++(pointerToStack->top)] = s;
+	return;
+}
+
+
+// preprocessor directives for queue implementation
+#define MAXQUEUE 100	// size of FIFO (queue)
+#define INITIALIZEQ -1	// value used to initialize queue.front and queue.back
+
+// global queue declaration, FIFO (queue), each element is a pointer to a string
+//
+typedef struct queue {
+	int front, back;
+	char **queueElement[MAXQUEUE];
+} QUEUE;
+
+// prototype queue function declarations
+//
+bool queueIsEmpty(QUEUE *);
+char * deQueue(QUEUE *);
+void enQueue(QUEUE *, char *);
+void dumpQueue(QUEUE *);
+
+
+// queue function definitions
+
+// test for queue empty condition
+bool queueIsEmpty(QUEUE *pointerToQueue) {
+	if (pointerToQueue->front == pointerToQueue->back) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// remove element from front of queue and return it as a string
+char * deQueue(QUEUE *pointerToQueue) {
+	if (queueIsEmpty(pointerToQueue)) {
+		printf("queue underflow \n");
+		fprintf(outputFile, "queue underflow \n");
+		exit(-1);
+
+	}
+	if (pointerToQueue->front == MAXQUEUE-1) {
+		pointerToQueue->front = 0;
+	} else {
+		(pointerToQueue->front)++;
+	}
+	return pointerToQueue->queueElement[pointerToQueue->front];
+}
+
+// add string as a new element at the back of the queue
+void enQueue(QUEUE *pointerToQueue, char *s) {
+	if (pointerToQueue->back == MAXQUEUE-1) {
+		pointerToQueue->back = 0;
+	} else {
+		(pointerToQueue->back)++;
+	}
+	if (pointerToQueue->front == pointerToQueue->back) {
+		printf("queue overflow \n");
+		fprintf(outputFile, "queue overflow \n");
+		exit(-1);
+
+	}
+	pointerToQueue->queueElement[pointerToQueue->back] = s;
+	return;
+}
+
+// print all elements in the queue as a list of blank-separated strings, from front of queue to back, in the order in
+// which they would be dequeued
+void dumpQueue(QUEUE *pointerToQueue) {
+	if (queueIsEmpty(pointerToQueue)) {
+		printf("queue is empty\n");
+		fprintf(outputFile, "queue is empty\n");
+	} else {
+		int i = pointerToQueue->front;
+		printf("queue elements, front to back:");
+		fprintf(outputFile, "queue elements, front to back:");
+		while (i != pointerToQueue->back) {
+			if (i == MAXQUEUE-1) {
+				i = 0;
+			} else {
+				i++;
+			}
+			printf(" %s", pointerToQueue->queueElement[i]);
+			fprintf(outputFile, " %s", pointerToQueue->queueElement[i]);
+		}
+		printf("\n");
+		fprintf(outputFile, "\n");
+	}
+	return;
+}
+
+
+// function main begins program execution
+int main(void) {
+
+	FILE *inputFile;					// declare pointer to input file
+
+	// initialize the stack to "empty"
+	STACK s, *pointerToStack;
+	s.top = EMPTYSTACK;
+	pointerToStack = &s;
+
+	// initialize the queue to "empty"
+	QUEUE q, *pointerToQueue;
+	q.front = q.back = INITIALIZEQ;
+	pointerToQueue = &q;
+
+	int exitCondition = EXIT_SUCCESS;	// initial exit condition
+	int nread;							// string read from input file (1), EOF encountered (EOF), otherwise(?)
+	char nextString[100];				// next string input to be processed
+	char *stringPointer;				// pointer to dynamically allocated string
+
+	// declare string constant used to signal (via stack) that the next string input goes to the back of the queue
+	const char * const stackString = "enqueue";
+
+	// declare pointers to output messages for file operations, avoids duplication of strings
+	const char * const inputFileOpenedMessage = "inputFile.txt opened for read access\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n";
+	const char * const outputFileOpenMessage = "outputFile.txt opened for write access\n";
+	const char * const outputFileCloseErrorMessage = "file close error on outputFile.txt\n";
+	const char * const outputFileCloseMessage = "outputFile.txt was closed without error\n";
+
+	// dynamic execution begins here, start with input file
+	if ((inputFile = fopen("inputFile.txt", "r"))==NULL) {
+		printf("inputFile.txt could not be opened with read access\n");
+		exit(-1);
+
+	}
+
+	// input file is open with read access, setup for output file
+	printf("%s", inputFileOpenedMessage);
+	if ((outputFile  = fopen("outputFile.txt", "w"))==NULL) {
+		printf ("outputFile.txt could not be opened with write access\n");
+		if (fclose(inputFile) != 0) {
+			printf("%s", inputFileCloseErrorMessage);
+		} else {
+			printf("%s", inputFileCloseMessage);
+		}
+		exit(-1);
+
+	}
+
+	// input and output files are open and ready
+	// log files status to console and output file
+	fprintf(outputFile, inputFileOpenedMessage);
+	printf(outputFileOpenMessage);
+	fprintf(outputFile, outputFileOpenMessage);
+
+	dumpQueue(pointerToQueue);	// shows that the queue has been initialized as expected (empty)
+
+	// ready to start processing by reading strings, one at a time, from input file
+	//
+	while (1== (nread = fscanf(inputFile,"%s,", &nextString))) {
+		// log each string input as it is read
+		printf("read %s\n", nextString);
+		fprintf(outputFile, "read %s\n", nextString);
+		// stack must be checked before dealing with string input
+		if (stackIsEmpty(pointerToStack)) {
+			if (strcmp(&nextString, "D") == 0) {
+				// encountered "D", interpret as signal to pop from front of queue
+				char *stringDataFromQueue;
+				printf("dequeue of %s\n", stringDataFromQueue = deQueue(pointerToQueue));
+				fprintf(outputFile, "dequeue of %s\n", stringDataFromQueue);
+				// done with this dynamically allocated string, so release the memory
+				free(stringDataFromQueue);
+				dumpQueue(pointerToQueue);
+			} else if (strcmp(&nextString, "E") == 0) {
+				// encountered "E", interpret as signal to push the next string after this one onto back of queue
+				printf("pushStack %s\n", stackString);
+				fprintf(outputFile, "pushStack %s\n", stackString);
+				// use stack to remember that next string (string read on next while loop iteration) needs to be enqueued
+				pushStack(pointerToStack, stackString);
+			} else {
+				// only expecting a "D" or an "E", got something else
+				// unexpected data, handled after break from while loop
+				break;
+
+			}
+		} else if (strcmp(popStack(pointerToStack), stackString) == 0) {
+			printf("enqueue of %s\n", nextString);
+			fprintf(outputFile, "enqueue of %s\n", nextString);
+			// dynamically allocate memory for copy of string input
+			stringPointer = malloc(strlen(nextString) + 1);
+			// dynamically allocated string becomes copy of string input
+			strcpy(stringPointer = malloc(strlen(nextString) + 1), nextString);
+			// value of stringPointer (pointer to dynamically allocated string) goes onto queue
+			// cannot use newString because it is going to be overwritten by next string read from input file
+			enQueue(pointerToQueue, stringPointer);
+			dumpQueue(pointerToQueue);
+		} else {
+			printf("unexpected value popped from stack, program logic is broken\n");
+			fprintf(outputFile, "unexpected value popped from stack, program logic is broken\n");
+			// handle as unexpected data, handled after break from while loop
+			break;
+
+		}
+	}	// loop to read next string from input file
+
+	// EOF on input file or input file aborted because of error case break out
+	if (ferror(inputFile)) {
+		printf("file error on inputFile.txt\n");
+		fprintf(outputFile, "file error on inputFile.txt\n");
+		exitCondition = -1;
+	} else if (nread != EOF) {
+		printf("encountered unexpected data from inputFile.txt\n");	// program should never produce this
+		fprintf(outputFile, "encountered unexpected data from inputFile.txt\n");
+		exitCondition = -1;
+	} else {
+		printf("encountered EOF from inputFile.txt\n");
+		fprintf(outputFile, "encountered EOF from inputFile.txt\n");
+	}
+
+	// clean up by closing input and output files and logging files status
+	if (fclose(inputFile) != 0) {
+		printf("%s", inputFileCloseErrorMessage);
+		fprintf(outputFile,"%s", inputFileCloseErrorMessage);
+		exitCondition = -1;
+	} else {
+		printf("%s", inputFileCloseMessage);
+		fprintf(outputFile, "%s", inputFileCloseMessage);
+	}
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMessage);
+		exitCondition = -1;
+	} else {
+		printf("%s", outputFileCloseMessage);
+		exitCondition = 0;
+	}
+
+	// log out message for user and terminate
+	printf("terminating with exit condition %i", exitCondition);
+	return(exitCondition);
+}
+
