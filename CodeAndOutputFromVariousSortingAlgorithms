@@ -1,0 +1,537 @@
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: Sorting                                                */
+/*                                                                            */
+/*              Filename: 3948-056-RonaldInselberg-12-Sorting.c               */
+/*                                                                            */
+/*              Date: March 3, 2014                                           */
+/*                                                                            */
+/*              Objective: Implement and test various sorting algorithms      */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/*              Code is followed by output data                               */ 
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+
+
+// input and output files are global
+FILE *inputFile, *outputFile;
+
+
+// more preprocessor directives
+#define LOG_TO_OUTPUT_FILE true
+#define CONSOLE_ONLY false
+#define GENERATE_OUTPUT true
+#define DO_NOT_GENERATE_OUTPUT false
+#define MAXNUM 100					// size program to process up to 100 input numbers
+#define EXIT_WITH_ERROR_STATUS -1
+#define BUFFERSIZE 1024				// set buffer size to 1024 chars, used by processInputFile and outputNumbers
+#define SINGLESPACE ""
+#define DOUBLESPACE "\n"
+
+
+// prototype function declarations, followed by function definitions
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+bool myStringToInt(int *num, char *str);
+void copyNumbers(int copyOfNumbers[], int numbers[], int n);
+bool compareNumbers(int a[], int b[], int n);
+void outputNumbers(int numbers[], int n, char *endWith);
+void requestedOutput(char *stringOut, int numbers[], int numberOfNumbers);
+int processInputFile(int numbers[]);
+void bubbleSort(int array[], int n, bool output);
+void selectionSort(int array[], int arraySize, bool output);
+void insertionSort(int array[], int arraySize, bool output);
+void shellSort(int a[], int n, bool output);
+void quickSort(int a[], int n, bool output);
+void siftDown( int a[], int start, int end);
+void heapSort( int a[], int n, bool output);
+void merge(int array[], int lo, int mid1, int mid2, int hi);
+void sortPartition(int array[], int lo, int hi);
+void mergeSort(int array[], int length, bool output);
+int main(void);
+
+// log exit status and terminate
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+
+}
+
+// log to console and output file
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString == NULL) {
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// convert string to integer
+/* could be expanded with strtol to handle conversion errors and int range violations */
+bool myStringToInt(int *num, char *str) {
+	*num = atoi(str);
+	return true;
+}
+
+// copy array of n integers to destination array (parameter #1) from source array (parameter #2)
+void copyNumbers(int copyOfNumbers[], int numbers[], int n) {
+	for (int i = 0; i < n; i++) {
+		copyOfNumbers[i] = numbers[i];
+	}
+}
+
+// compare two arrays, each of n integers, for equality between corresponding array elements
+bool compareNumbers(int a[], int b[], int n) {
+	for (int i = 0; i < n; i++) {
+		if (a[i] != b[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// write array of n integers to console and to output file as string of integers, from array[0] to array[n-1]
+void outputNumbers(int numbers[], int n, char *endWith) {
+	char lineOfOutput[BUFFERSIZE] = "";
+	char outputString[99];	// overkill, no integer would ever convert to this many (99) chars
+	for (int i = 0; i < n; i++) {
+		sprintf(outputString, "%d ", numbers[i]);
+		strcat(lineOfOutput, outputString);
+	}
+	int nout = strlen(lineOfOutput);
+	if (nout > 0) {
+		lineOfOutput[nout] = '\n';
+	}
+	strcat(lineOfOutput, endWith);
+	logToConsoleAndOutputFile(lineOfOutput, NULL);
+}
+
+// writes output of algorithm to console and to output file, called by any of the algorithms
+void requestedOutput(char *stringOut, int numbers[], int numberOfNumbers) {
+	logToConsoleAndOutputFile(stringOut, NULL);
+	outputNumbers(numbers, numberOfNumbers, DOUBLESPACE);
+}
+
+// all processing of input data file
+int processInputFile(int numbers[]) {
+
+	char lineOfInput[BUFFERSIZE];				// buffer for all chars entered until EOL or "return" key
+	char *line = lineOfInput, *token;			// declarations for string processing
+	int howManyToSort = 0, num;					// num holds int value converted from string, value stored in numbers[]
+
+	const char * const inputFileOpenMsg = "inputFile.txt opened for read access\n";
+	const char * const inputFileOpenErrorMsg = "inputFile.txt could not be opened with read access\n";
+	const char * const inputFileErrorOnRead = "file error on inputFile.txt\n";
+	const char * const inputFileUnexpectedData = "encountered unexpected data from inputFile.txt\n";
+	const char * const inputFileEOF = "\nencountered EOF from inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+
+	if ((inputFile = fopen("inputFile.txt", "r")) == NULL) {
+		logToConsoleAndOutputFile(inputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+
+	logToConsoleAndOutputFile(inputFileOpenMsg, NULL);
+
+	// loop parses, counts and converts any/all strings from input file until EOF is encountered
+	// every string is converted to its corresponding integer value
+	while (!feof(inputFile)) {
+		line = fgets(lineOfInput, BUFFERSIZE, inputFile);
+		if (line == NULL) {
+			break;
+
+		}
+		logToConsoleAndOutputFile(line, NULL);
+		token = strtok(lineOfInput, ",\n");
+		while (token != NULL) {
+			if (myStringToInt(&num, token)) {
+				numbers[howManyToSort++] = num;
+			}
+			token = strtok(NULL, ",\n");
+		}
+	}
+
+	if (feof(inputFile)) {
+		logToConsoleAndOutputFile(inputFileEOF, NULL);
+	} else if (ferror(inputFile)) {
+		logToConsoleAndOutputFile(inputFileErrorOnRead, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else if (line == NULL) {
+		logToConsoleAndOutputFile(inputFileUnexpectedData, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+
+	// clean up by closing input file and logging file status
+	if (fclose(inputFile) != 0) {
+		logToConsoleAndOutputFile(inputFileCloseErrorMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else {
+		logToConsoleAndOutputFile(inputFileCloseMessage, NULL);
+		logToConsoleAndOutputFile("numbers from inputFile.txt before sorting\n", NULL);
+		outputNumbers(numbers, howManyToSort, DOUBLESPACE);
+	}
+	return howManyToSort;
+}
+
+// bubble sort algorithm
+void bubbleSort(int array[], int n, bool output) {
+	logToConsoleAndOutputFile("bubble sort, each pass \"sinks\" highest-valued key to its final position\n", NULL);
+	for (int pass=1; pass < n; pass++) {
+		for (int i=0; i < n - pass; i++) {
+			if (array[i] > array[i+1]) {
+				int swap = array[i];
+				array[i] = array[i+1];
+				array[i+1] = swap;
+			}
+		}
+		outputNumbers(array, n, SINGLESPACE);
+	}
+	if (output) {
+		requestedOutput("output from bubble sort\n", array, n);
+	}
+}
+
+// selection sort algorithm
+void selectionSort(int array[], int arraySize, bool output) {
+	int minValueKey, swapElement;
+
+	logToConsoleAndOutputFile("selection sort, each pass \"floats\" remaining lowest-valued key to its final position\n", NULL);
+	for (int i = 0; i < arraySize; i++) {
+		minValueKey = i;
+		for (int j = i + 1; j < arraySize; j++) {
+			if (array[j] < array[minValueKey]) {
+				minValueKey = j;
+			}
+		}
+		swapElement = array[i];
+		array[i] = array[minValueKey];
+		array[minValueKey] = swapElement;
+		outputNumbers(array, arraySize, SINGLESPACE);
+	}
+	if (output) {
+		requestedOutput("output from selection sort\n", array, arraySize);
+	}
+}
+
+
+// insertion sort algorithm
+void insertionSort(int array[], int arraySize, bool output) {
+	int  elementToInsert;	// holds value of currently selected element
+
+	logToConsoleAndOutputFile("insertion sort, intermediate pass\n", NULL);
+	// loop, i selects element to be inserted, work towards high end of array
+	for (int i = 1; i < arraySize; i++) {
+		int insertElement = i;
+		elementToInsert = array[i];
+		// search for slot to insert currently selected element
+		while (insertElement > 0 && array[insertElement-1] > elementToInsert) {
+			// shifts higher-valued array element one slot closer to the high end of the array;
+			array[insertElement] = array[insertElement-1];
+			--insertElement;
+		}
+		// insert selected element where it belongs on this pass
+		array[insertElement] = elementToInsert;
+		outputNumbers(array, arraySize, SINGLESPACE);
+	}
+	if (output) {
+		requestedOutput("output from insertion sort\n", array, arraySize);
+	}
+}
+
+// shell sort algorithm
+void shellSort(int a[], int n, bool output) {
+	int temp, gap = n;
+	logToConsoleAndOutputFile("shell sort, intermediate pass\n", NULL);
+	// perform an insertion sort of interleaved partitions based on an ever-decreasing gap size "g"
+	// after each pass, the array has been g-sorted
+	// after the final pass, the array has been 1-sorted or completely sorted
+	while (gap > 1) {
+		gap = gap/2;
+		for (int i = gap; i < n; i += 1) {
+			temp = a[i];
+			int j;
+			for (j = i; j >= gap && a[j - gap] > temp; j -= gap) {
+				a[j] = a[j - gap];
+			}
+			a[j] = temp;
+		}
+		outputNumbers(a, n, SINGLESPACE);
+	}
+	if (output) {
+		requestedOutput("output from shell sort\n", a, n);
+	}
+}
+
+// quick sort algorithm
+void quickSort(int a[], int n, bool output) {
+	logToConsoleAndOutputFile("quick sort on partition:\n", NULL);
+	outputNumbers(a, n, SINGLESPACE);
+	if (n <  2) {
+		if (output) {
+			requestedOutput("output from quick sort\n", a, n);
+		}
+		return;
+	}
+	int pivot = a[0];	// always pivot on the first element; works OK, but there are more optimal methods
+	int lo = 0;
+	int hi = n - 1;
+	int swap;
+	while (lo < hi) {
+		while (a[lo] < pivot) {
+			lo++;
+		}
+		while (a[hi] > pivot) {
+			hi--;
+		}
+		swap = a[lo];
+		a[lo] = a[hi];
+		a[hi] = swap;
+	}
+	quickSort(a, lo, DO_NOT_GENERATE_OUTPUT);
+	quickSort(&a[lo+1], n - lo - 1, DO_NOT_GENERATE_OUTPUT);
+	if (output) {
+		requestedOutput("output from quick sort\n", a, n);
+	}
+}
+
+// siftDown called from heapSort
+void siftDown( int a[], int start, int end) {
+	int root = start;
+
+	while ( root*2+1 < end ) {
+		int child = 2*root + 1;
+		if ((child + 1 < end) && (a[child] < a[child+1])) {
+			child += 1;
+		}
+		if (a[root] < a[child]) {
+			int temp = a[child];
+			a[child] = a[root];
+			a[root] = temp;
+			root = child;
+		}
+		else {
+			logToConsoleAndOutputFile("heap sort, display heap (intermediate state):\n", NULL);
+			outputNumbers(&a[start], end-start, SINGLESPACE);
+			return;
+		}
+	}
+}
+
+// heap sort algorithm, calls siftDown
+void heapSort( int a[], int n, bool output) {
+	int start, end;
+
+	/* heapify */
+	for (start = (n-2)/2; start >=0; start--) {
+		siftDown( a, start, n);
+	}
+	for (end=n-1; end > 0; end--) {
+		int temp = a[end];
+		a[end] = a[0];
+		a[0] = temp;
+		siftDown(a, 0, end);
+	}
+	if (output) {
+		requestedOutput("output from heap sort\n", a, n);
+	}
+}
+
+// merge, called from sortPartition
+void merge(int array[], int lo, int mid1, int mid2, int hi) {
+	int indexIntoLowerPartition = lo;
+	int indexIntoHigherPartition = mid2;
+	int tempIndex = lo;
+	int tempArray[MAXNUM];	// declare temporary working array for merging sorted partitions
+
+	// merge the partitions until the end of either one is encountered
+	while (indexIntoLowerPartition <= mid1 && indexIntoHigherPartition <= hi) {
+		if (array[indexIntoLowerPartition] <= array[indexIntoHigherPartition]) {
+			tempArray[tempIndex++] = array[indexIntoLowerPartition++];
+		} else {
+			tempArray[tempIndex++] = array[indexIntoHigherPartition++];
+		}
+	}
+	if (indexIntoLowerPartition == mid2) {
+		// encountered end of lower partition, copy remainder of higher partition into temporary working array
+		while (indexIntoHigherPartition <= hi) {
+			tempArray[tempIndex++] = array[indexIntoHigherPartition++];
+		}
+	} else {
+		// encountered end of higher partition, copy remainder of lower partition into temporary working array
+		while (indexIntoLowerPartition <= mid1) {
+			tempArray[tempIndex++] = array[indexIntoLowerPartition++];
+		}
+	}
+	// copy merged and sorted elements from temporary working array to overwrite and update the calling array
+	for(int i = lo; i <= hi; i++) {
+		array[i] = tempArray[i];
+	}
+}
+
+// sortPartition, called from mergeSort
+void sortPartition(int array[], int lo, int hi) {
+	int mid1, mid2;
+	logToConsoleAndOutputFile("merge sort, partition to be sorted:\n", NULL);
+	outputNumbers(&array[lo], hi-lo+1, SINGLESPACE);
+	if ((hi - lo) < 1) {
+		return;	// array is single element, termination condition for recursive algorithm
+	}
+	// divide array into a lower partition and a higher partition
+	// the array is divided at the midpoint of its subscript range
+	mid1 = (hi + lo)  / 2;
+	mid2 = mid1 + 1;
+	sortPartition(array, lo, mid1);		// sort the lower partition
+	sortPartition(array, mid2, hi);		// sort the higher partition
+	merge(array, lo, mid1, mid2, hi);	// merge the lower and higher sorted partitions to create a single sorted array
+}
+
+// merge sort algorithm
+void mergeSort(int array[], int length, bool output) {
+	sortPartition(array, 0, length-1);	// the first partition is the entire array
+	if (output) {
+		requestedOutput("output from merge sort\n", array, length);
+	}
+}
+
+
+// function main begins program execution
+int main(void) {
+
+	// declare pointers to predefined text messages, avoids duplication of strings
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+	const char * const isYes = "YES\n\n";
+	const char * const isNo = "NO\n\n";
+
+	int n2sort, numbers[MAXNUM], copyOfNumbers[MAXNUM], fromBubbleSort[MAXNUM];
+	bool match;
+
+	// dynamic execution begins here, start by opening output file
+	if ((outputFile  = fopen("outputFile.txt", "w")) == NULL) {
+		printf (outputFileOpenErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	}
+	// log to console and output file
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+
+	// function handles all input file processing
+	n2sort = processInputFile(numbers);
+
+	// run bubble sort and save output for comparison to other sorting algorithms
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	bubbleSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	copyNumbers(fromBubbleSort, copyOfNumbers, n2sort);
+
+	// run all other sorting algorithm and compare each algorithm's output to bubble sort
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	selectionSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("selection sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	insertionSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("insertion sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	shellSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("shell sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	quickSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("quick sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	heapSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("heap sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+	copyNumbers(copyOfNumbers, numbers, n2sort);
+	mergeSort(copyOfNumbers, n2sort, GENERATE_OUTPUT);
+	match = compareNumbers(copyOfNumbers, fromBubbleSort, n2sort);
+	logToConsoleAndOutputFile("merge sort produces same output as bubble sort? %s", match ? isYes : isNo);
+
+
+	// close output file and log file status
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	} else {
+		printf("%s", outputFileCloseMsg);
+	}
+	// log out message for user and terminate as requested
+	myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+}
+
+
+outputFile.txt opened for write access
+inputFile.txt opened for read access
+49, 17, 56, 85, 12, 97, 33, 71, 19, 62, 38, 84, 51,
+29, 77, 65, 44, 99, 4, 47,67, 41, 23, 88, 73, 8, 100
+     25, 91, 58, 59, 22, 15, 35, 95, 60, 20, 7, 50, 10
+encountered EOF from inputFile.txt
+inputFile.txt was closed without error
+
+numbers from inputFile.txt before sorting
+49 17 56 85 12 97 33 71 19 62 38 84 51 29 77 65 44 99 4 47 67 41 23 88 73 8 100 25 91 58 59 22 15 35 95 60 20 7 50 10 
+
+
+output from bubble sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+
+output from selection sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+selection sort produces same output as bubble sort? YES
+
+output from insertion sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+insertion sort produces same output as bubble sort? YES
+
+output from shell sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+shell sort produces same output as bubble sort? YES
+
+output from quick sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+quick sort produces same output as bubble sort? YES
+
+output from heap sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+heap sort produces same output as bubble sort? YES
+
+output from merge sort
+4 7 8 10 12 15 17 19 20 22 23 25 29 33 35 38 41 44 47 49 50 51 56 58 59 60 62 65 67 71 73 77 84 85 88 91 95 97 99 100 
+merge sort produces same output as bubble sort? YES
+
+
+
