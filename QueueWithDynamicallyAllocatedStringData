@@ -1,21 +1,17 @@
 /******************************************************************************/
 /******************************* prologue *************************************/
 /*                                                                            */
-/*                       Advanced C Programming                               */
-/*                                                                            */
 /*              Author: Ronald Inselberg                                      */
 /*                                                                            */
-/*              Assignment Number: 09                                         */
-/*                                                                            */
 /*              Topic: Queue (FIFO) processing                                */
-/*                                                                            */
-/*              Filename: 3948-056-RonaldInselberg-09-Queues.c                */
 /*                                                                            */
 /*              Date: February 17, 2014                                       */
 /*                                                                            */
 /*              Objective: Demonstrate a queue (FIFO) application             */
 /*                                                                            */
 /*              Comments:                                                     */
+/*                                                                            */
+/*              CODE IS FOLLOWED BY INPUT AND OUTPUT DATA                     */
 /*                                                                            */
 /*              The input data is described by the regular expression         */
 /*              [ (E operand) | D ]*                                          */
@@ -342,3 +338,7 @@ int main(void) {
 	return(exitCondition);
 }
 
+
+INPUT DATA:
+E 25 E 37 E 45 E 52 E 98 D D D E 36 E 12 D
+D E 69
