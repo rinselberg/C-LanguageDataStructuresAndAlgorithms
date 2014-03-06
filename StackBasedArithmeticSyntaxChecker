@@ -1,26 +1,17 @@
 /******************************************************************************/
 /******************************* prologue *************************************/
 /*                                                                            */
-/*              University of California Extension, Santa Cruz                */
-/*                                                                            */
-/*                       Advanced C Programming                               */
-/*                                                                            */
-/*              Instructor: Rajainder A. Yeldandi                             */
-/*                                                                            */
 /*              Author: Ronald Inselberg                                      */
 /*                                                                            */
-/*              Assignment Number: 08                                         */
-/*                                                                            */
-/*                                                                            */
 /*              Topic: Stack (LIFO) processing                                */
-/*                                                                            */
-/*              Filename: 3948-056-RonaldInselberg-08-Stacks.c                */
 /*                                                                            */
 /*              Date: February 13, 2014                                       */
 /*                                                                            */
 /*              Objective: Demonstrate a stack (LIFO) application             */
 /*                                                                            */
 /*              Comments:                                                     */
+/*                                                                            */
+/*              CODE IS FOLLOWED BY INPUT AND OUTPUT DATA                     */
 /*                                                                            */
 /*  The arithmetic expression is read from the input file "inputFile.txt".    */
 /*  The output is written to "outputFile.txt". All user interaction is via    */
