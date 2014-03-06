@@ -343,6 +343,7 @@ INPUT DATA:
 E 25 E 37 E 45 E 52 E 98 D D D E 36 E 12 D
 D E 69
 
+
 OUTPUT DATA:
 inputFile.txt opened for read access
 outputFile.txt opened for write access
