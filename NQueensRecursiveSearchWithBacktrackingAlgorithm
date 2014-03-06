@@ -1,9 +1,6 @@
 /******************************************************************************/
 /******************************* prologue *************************************/
 /*                                                                            */
-/*                                                                            */
-/*                       Advanced C Programming                               */
-/*                                                                            */
 /*              Author: Ronald Inselberg                                      */
 /*                                                                            */
 /*              Topic: N-Queens recursion with backtracking                   */
@@ -14,12 +11,14 @@
 /*                                                                            */
 /*              Comments:                                                     */
 /*                                                                            */
+/*              CODE IS FOLLOWED BY OUTPUT DATA                               */
+/*                                                                            */
 /*              I reused Queue (FIFO) from previous assignment, as a way to   */
 /*              parse and store all the user inputs before starting the	      */
 /*              loop that calls the N-Queens algorithm for any/all            */
 /*              queen #1 column numbers that are specified by the user.       */
 /*                                                                            */
-/*				      The user is prompted to enter all input data from the         */
+/*	        The user is prompted to enter all input data from the         */
 /*              console interface.                                            */
 /*                                                                            */
 /*              The user is required to enter however many queen #1 column    */
@@ -28,7 +27,7 @@
 /*              input. If "Q" is not encountered before EOL or \n, the        */
 /*              program requests more line(s) of input, until a "Q" string    */
 /*              is encountered. Strings that are > 1 char or strings that     */
-/*				      do not convert to a valid column number (0 to BOARDSIZE-1)    */
+/*		do not convert to a valid column number (0 to BOARDSIZE-1)    */
 /*              are ignored. All input data is recorded in the output file.   */
 /*                                                                            */
 /******************************************************************************/
@@ -332,4 +331,159 @@ int main(void) {
 	// log out message for user and terminate as requested
 	myExit(0, CONSOLE_ONLY);
 }
+
+
+outputFile.txt opened for write access
+program accepts comma(,) or blank separated list of column numbers (0-7), Q to terminate
+
+requesting input from user
+parsing input data -> 4, 2, 9, 6, 3, 0, 5, 1, and 7
+
+processing string from input data -> 4
+queueing request for 8-Queens with queen #1 in column 4
+
+processing string from input data -> 2
+queueing request for 8-Queens with queen #1 in column 2
+
+processing string from input data -> 9
+encountered unexpected user input from console
+
+processing string from input data -> 6
+queueing request for 8-Queens with queen #1 in column 6
+
+processing string from input data -> 3
+queueing request for 8-Queens with queen #1 in column 3
+
+processing string from input data -> 0
+queueing request for 8-Queens with queen #1 in column 0
+
+processing string from input data -> 5
+queueing request for 8-Queens with queen #1 in column 5
+
+processing string from input data -> 1
+queueing request for 8-Queens with queen #1 in column 1
+
+processing string from input data -> and
+encountered unexpected user input from console
+
+processing string from input data -> 7
+queueing request for 8-Queens with queen #1 in column 7
+
+requesting input from user
+parsing input data -> Q
+
+
+8-Queens solution for queen #1 in column 4
+
+Q1->4  Q2->0  Q3->3  Q4->5  Q5->7  Q6->1  Q7->6  Q8->2  
+
+*  *  *  *  U  *  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  Q  *  *  *  *  
+*  *  *  *  *  Q  *  *  
+*  *  *  *  *  *  *  Q  
+*  Q  *  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  Q  *  *  *  *  *  
+
+
+8-Queens solution for queen #1 in column 2
+
+Q1->2  Q2->0  Q3->6  Q4->4  Q5->7  Q6->1  Q7->3  Q8->5  
+
+*  *  U  *  *  *  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  *  *  Q  *  *  *  
+*  *  *  *  *  *  *  Q  
+*  Q  *  *  *  *  *  *  
+*  *  *  Q  *  *  *  *  
+*  *  *  *  *  Q  *  *  
+
+
+8-Queens solution for queen #1 in column 6
+
+Q1->6  Q2->0  Q3->2  Q4->7  Q5->5  Q6->3  Q7->1  Q8->4  
+
+*  *  *  *  *  *  U  *  
+Q  *  *  *  *  *  *  *  
+*  *  Q  *  *  *  *  *  
+*  *  *  *  *  *  *  Q  
+*  *  *  *  *  Q  *  *  
+*  *  *  Q  *  *  *  *  
+*  Q  *  *  *  *  *  *  
+*  *  *  *  Q  *  *  *  
+
+
+8-Queens solution for queen #1 in column 3
+
+Q1->3  Q2->0  Q3->4  Q4->7  Q5->1  Q6->6  Q7->2  Q8->5  
+
+*  *  *  U  *  *  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  *  Q  *  *  *  
+*  *  *  *  *  *  *  Q  
+*  Q  *  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  Q  *  *  *  *  *  
+*  *  *  *  *  Q  *  *  
+
+
+8-Queens solution for queen #1 in column 0
+
+Q1->0  Q2->4  Q3->7  Q4->5  Q5->2  Q6->6  Q7->1  Q8->3  
+
+U  *  *  *  *  *  *  *  
+*  *  *  *  Q  *  *  *  
+*  *  *  *  *  *  *  Q  
+*  *  *  *  *  Q  *  *  
+*  *  Q  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  Q  *  *  *  *  *  *  
+*  *  *  Q  *  *  *  *  
+
+
+8-Queens solution for queen #1 in column 5
+
+Q1->5  Q2->0  Q3->4  Q4->1  Q5->7  Q6->2  Q7->6  Q8->3  
+
+*  *  *  *  *  U  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  *  Q  *  *  *  
+*  Q  *  *  *  *  *  *  
+*  *  *  *  *  *  *  Q  
+*  *  Q  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  *  Q  *  *  *  *  
+
+
+8-Queens solution for queen #1 in column 1
+
+Q1->1  Q2->3  Q3->5  Q4->7  Q5->2  Q6->0  Q7->6  Q8->4  
+
+*  U  *  *  *  *  *  *  
+*  *  *  Q  *  *  *  *  
+*  *  *  *  *  Q  *  *  
+*  *  *  *  *  *  *  Q  
+*  *  Q  *  *  *  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  *  *  Q  *  *  *  
+
+
+8-Queens solution for queen #1 in column 7
+
+Q1->7  Q2->1  Q3->3  Q4->0  Q5->6  Q6->4  Q7->2  Q8->5  
+
+*  *  *  *  *  *  *  U  
+*  Q  *  *  *  *  *  *  
+*  *  *  Q  *  *  *  *  
+Q  *  *  *  *  *  *  *  
+*  *  *  *  *  *  Q  *  
+*  *  *  *  Q  *  *  *  
+*  *  Q  *  *  *  *  *  
+*  *  *  *  *  Q  *  *  
+
+
+encountered user termination request from console
 
