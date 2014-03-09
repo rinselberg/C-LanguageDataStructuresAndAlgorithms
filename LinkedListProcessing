@@ -1,0 +1,430 @@
+CODE, FOLLOWED BY OUTPUT DATA
+
+
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: Linked Lists                                           */
+/*                                                                            */
+/*              Date: March 10, 2014                                          */
+/*                                                                            */
+/*              Objective: Implement linked list data structure and processing*/
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/*				List data elements are numbers (int)                          */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+/*
+reserved for future implementation
+#include <errno.h>
+#include <limits.h>
+*/
+
+// input and output files are global
+FILE *inputFile, *outputFile;
+
+
+// more preprocessor directives
+#define LOG_TO_OUTPUT_FILE true
+#define CONSOLE_ONLY false
+#define EXIT_WITH_ERROR_STATUS -1
+#define BUFFERSIZE 1024				// set buffer size to 1024 chars, used by processInputFile and writeList
+#define SINGLESPACE ""
+#define DOUBLESPACE "\n"
+
+
+// global linked list structure declaration, each list element value is a number of type int
+typedef struct list {
+	int number;
+	struct list *link;
+} LIST;
+
+
+// prototype function declarations, followed by function definitions
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+bool myStringToInt(int *, char *);
+void writeList(LIST *);
+LIST * processInputFile();
+LIST * reverseList(LIST *);
+LIST * deleteElement(LIST *, int);
+void deletionOfElements(LIST *);
+int main(void);
+
+
+// log exit status and terminate
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+
+}
+
+// log to console and output file
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString == NULL) {
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// convert string to integer
+// long and int range violation checks are left for future implementation
+bool myStringToInt(int *num, char *str) {
+	char *ptr;
+	*num = (int) strtol(str, &ptr, 10);
+	if (*ptr=='\0') {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// write list of numbers to outputFile.txt and to console
+void writeList(LIST *listOfNumbers) {
+	char lineOfOutput[BUFFERSIZE] = "";
+	char outputString[99];	// overkill, no numeric string entered by user would ever convert to this many (99) chars
+	while (listOfNumbers != NULL) {
+		sprintf(outputString, "%d ", listOfNumbers->number);
+		strcat(lineOfOutput, outputString);
+		listOfNumbers = listOfNumbers->link;
+	}
+	int nout = strlen(lineOfOutput);
+	if (nout > 0) {
+		lineOfOutput[nout] = '\n';
+	}
+	strcat(lineOfOutput, DOUBLESPACE);
+	logToConsoleAndOutputFile(lineOfOutput, NULL);
+}
+
+// all processing of input data from inputFile.txt
+LIST * processInputFile() {
+
+	// local declarations needed for processing
+	char lineOfInput[BUFFERSIZE];					// buffer for all chars entered until EOL or "return" key
+	char *line = lineOfInput, *token;				// declarations for string processing
+	int num;										// num holds int value converted from string
+	LIST *listOfNumbers = NULL;						// initialize to empty list
+	LIST *endOfList = NULL, *newEndOfList = NULL;	// each new input is added to the end of the list
+
+	// more local declarations, string constants used as output to outputFile.txt and to console
+	const char * const inputFileOpenMsg = "inputFile.txt opened for read access\ncopying input data\n\n";
+	const char * const inputFileOpenErrorMsg = "inputFile.txt could not be opened with read access\n";
+	const char * const inputFileErrorOnRead = "file error on inputFile.txt\n";
+	const char * const inputFileUnexpectedData = "encountered unexpected data from inputFile.txt\n";
+	const char * const inputFileEOF = "\n\nencountered EOF from inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+	const char * const memoryMsg = "error, memory for new list element not allocated\n";
+
+	if ((inputFile = fopen("inputFile.txt", "r")) == NULL) {
+		logToConsoleAndOutputFile(inputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	logToConsoleAndOutputFile(inputFileOpenMsg, NULL);
+
+	// loop, converting any/all numbers entered by user into a linked list
+	while (!feof(inputFile)) {
+		line = fgets(lineOfInput, BUFFERSIZE, inputFile);	// reads record (line) from input file
+		if (line == NULL) {
+			break;
+
+		}
+		logToConsoleAndOutputFile(line, NULL);	// copy record (line) of input to output file
+
+		// loop to parse record (line) as one/more strings, process each string
+		token = strtok(lineOfInput, ",\n");
+		while (token != NULL) {
+			if (myStringToInt(&num, token)) {
+				// first or next number has been recognized as a well-formatted numeric string and converted to int
+				newEndOfList = malloc(sizeof(LIST));	// allocate memory for a new list element
+				if (newEndOfList==NULL) {
+					myExit(memoryMsg, LOG_TO_OUTPUT_FILE);	// if not able to allocate memory
+
+				}
+				newEndOfList->number = num;	// adds number (int) to list
+				newEndOfList->link = NULL;
+				if (endOfList==NULL) {
+					listOfNumbers = endOfList = newEndOfList;
+				} else {
+					endOfList->link = newEndOfList;
+					endOfList = newEndOfList;
+				}
+			} else {
+				logToConsoleAndOutputFile("parsed non-numeric string data \"%s\" from inputFile.txt\n", token);
+				// string from input file not recognized as a number, ignore
+			}
+			token = strtok(NULL, ",\n");
+		} // ends processing of record (line) from input file
+	} // ends processing of data from input file
+
+	if (feof(inputFile)) {
+		logToConsoleAndOutputFile(inputFileEOF, NULL);				// encountered EOF from inputFile.txt
+	} else if (ferror(inputFile)) {
+		logToConsoleAndOutputFile(inputFileErrorOnRead, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);			// error on input file, abort
+
+	} else if (line == NULL) {
+		logToConsoleAndOutputFile(inputFileUnexpectedData, NULL);	// did not get well-formed record (line), abort
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+
+	// clean up by closing input file and logging file status
+	if (fclose(inputFile) != 0) {
+		logToConsoleAndOutputFile(inputFileCloseErrorMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else {
+		logToConsoleAndOutputFile(inputFileCloseMessage, NULL);
+	}
+	return listOfNumbers;
+}
+
+// return the list generated by reversing the order of the numbers in the list of numbers
+LIST * reverseList(LIST *listOfNumbers) {
+	LIST *reverseOfList = NULL;
+	LIST *nextElementInList;
+	while (listOfNumbers != NULL) {
+		nextElementInList = listOfNumbers->link;
+		listOfNumbers->link = reverseOfList;
+		reverseOfList = listOfNumbers;
+		listOfNumbers = nextElementInList;
+	}
+	return reverseOfList;
+}
+
+// delete the specified number from the list of numbers and return the updated list
+LIST * deleteElement(LIST *listOfNumbers, int numberSpecified) {
+	if (listOfNumbers==NULL) {
+		logToConsoleAndOutputFile("list is empty, no delete is possible\n", NULL);
+		return NULL;
+
+	}
+	LIST *listAfterDeletion = listOfNumbers;
+	LIST *spliceList = listOfNumbers;
+	while (listOfNumbers != NULL) {
+		if (listOfNumbers->number == numberSpecified) {
+			LIST *save = listOfNumbers;
+			if (listAfterDeletion==listOfNumbers) {
+				listAfterDeletion = listOfNumbers->link;
+			}
+			listOfNumbers = listOfNumbers->link;
+			free(save);
+			spliceList->link = listOfNumbers;
+			char stringFromSpecifiedNumber[99]; // 99 is overkill
+			sprintf(stringFromSpecifiedNumber, "%d", numberSpecified);
+			logToConsoleAndOutputFile("number %s deleted from list\n\n", stringFromSpecifiedNumber);
+			break;
+
+		} else {
+			spliceList = listOfNumbers;
+			if ((listOfNumbers = listOfNumbers->link)==NULL) {
+				logToConsoleAndOutputFile("invalid delete request, number not in list\n\n", NULL);
+				break;
+
+			}
+		}
+	}
+	return listAfterDeletion;
+}
+
+// processes all user interaction using console
+void deletionOfElements(LIST *listOfNumbers) {
+
+	// local declarations needed for processing
+	char stringIn[BUFFERSIZE];			// buffer for all chars entered until EOL or "return" key
+	bool userRT = false;				// encountered user requested termination string 'Q', initialize to false
+	bool invalidInput;					// encountered invalid input string
+	char *token;						// used to parse input buffer into comma(,) or blank separated strings
+	int intValue;						// int value when input string is converted to column number
+
+	logToConsoleAndOutputFile("program accepts comma(,) or blank separated list of numbers to delete, and 'Q' to terminate\n", NULL);
+
+	// loop processes every record (line) of data entered by user
+	while (true) {
+		logToConsoleAndOutputFile("requesting input from user\n", NULL);
+		fgets(stringIn, BUFFERSIZE, stdin);
+		logToConsoleAndOutputFile("parsing input data -> %s", stringIn);
+		token = strtok(stringIn, " ,\n");
+		// loop processes any/all strings from input record, strings separated by comma(,) or white space
+		while (token != NULL) {
+			invalidInput = false;
+			if (strcmp(token,"Q") == 0) {
+				userRT = true;	// encountered user termination request Q
+				break;			// stop parsing input buffer for more strings
+
+			}
+			logToConsoleAndOutputFile("processing string from input data -> %s\n", token);
+			if (myStringToInt(&intValue, token)) {
+				logToConsoleAndOutputFile("generates delete request for %s\n", token);
+				listOfNumbers = deleteElement(listOfNumbers, intValue);
+			} else {
+				logToConsoleAndOutputFile("%s is not an integer, does not generate delete request\n\n", token);
+			}
+			token = strtok(NULL, " ,\n");	// next string from input buffer
+		}
+		if (userRT) {
+			break;	// already got termination request Q, do not get another line of input
+
+		}	// end loop to process strings from input record
+		logToConsoleAndOutputFile("termination request 'Q' not received, waiting for more input:\n", NULL);
+	}	// end loop to process record (line) of input from console
+	logToConsoleAndOutputFile("encountered user termination request 'Q'\n\n", NULL);
+}
+
+
+// function main begins program execution
+int main(void) {
+
+	// local declarations needed for processing
+	LIST *listOfNumbers = NULL;		// initialize list of numbers to empty list
+
+	// more local declarations, string constants used as output to outputFile.txt and to console
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+
+	// dynamic execution begins here, start by opening output file
+	if ((outputFile  = fopen("outputFile.txt", "w")) == NULL) {
+		printf (outputFileOpenErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	}
+	// log to console and output file
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+
+	// function handles all input file processing
+	listOfNumbers = processInputFile();
+
+	logToConsoleAndOutputFile("numbers from inputFile.txt converted into linked list:\n", NULL);
+	writeList(listOfNumbers);
+
+	listOfNumbers = reverseList(listOfNumbers);
+	logToConsoleAndOutputFile("reverse the order of the elements in the list:\n", NULL);
+	writeList(listOfNumbers);
+
+	// function handles deletions requested by user by accepting user inputs from console
+	deletionOfElements(listOfNumbers);
+	logToConsoleAndOutputFile("list of numbers after user-requested deletions:\n", NULL);
+	writeList(listOfNumbers);
+
+	// close output file and log file status
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	} else {
+		printf("%s", outputFileCloseMsg);
+	}
+	// log out message for user and terminate as requested
+	myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+}
+
+
+outputFile.txt opened for write access
+inputFile.txt opened for read access
+copying input data
+
+49, 17, 56, 85, 12, 97, 33, 71, 19, 62, 38, 84, 51,
+29, 77, 65, 44, 99, 4, 47, 67, 41, 23, 88, 73, 8, 10,
+100, 25, 91, 58, 45, 22, 15, 35, 95, 60, 20, 7, 50
+
+encountered EOF from inputFile.txt
+inputFile.txt was closed without error
+
+numbers from inputFile.txt converted into linked list:
+49 17 56 85 12 97 33 71 19 62 38 84 51 29 77 65 44 99 4 47 67 41 23 88 73 8 10 100 25 91 58 45 22 15 35 95 60 20 7 50 
+
+reverse the order of the elements in the list:
+50 7 20 60 95 35 15 22 45 58 91 25 100 10 8 73 88 23 41 67 47 4 99 44 65 77 29 51 84 38 62 19 71 33 97 12 85 56 17 49 
+
+program accepts comma(,) or blank separated list of numbers to delete, and 'Q' to terminate
+requesting input from user
+parsing input data -> 71
+processing string from input data -> 71
+generates delete request for 71
+number 71 deleted from list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 51
+processing string from input data -> 51
+generates delete request for 51
+number 51 deleted from list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 38
+processing string from input data -> 38
+generates delete request for 38
+number 38 deleted from list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 5
+processing string from input data -> 5
+generates delete request for 5
+invalid delete request, number not in list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 0
+processing string from input data -> 0
+generates delete request for 0
+invalid delete request, number not in list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 25
+processing string from input data -> 25
+generates delete request for 25
+number 25 deleted from list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 42
+processing string from input data -> 42
+generates delete request for 42
+invalid delete request, number not in list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 32
+processing string from input data -> 32
+generates delete request for 32
+invalid delete request, number not in list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> 47
+processing string from input data -> 47
+generates delete request for 47
+number 47 deleted from list
+
+termination request 'Q' not received, waiting for more input:
+requesting input from user
+parsing input data -> Q
+encountered user termination request 'Q'
+
+list of numbers after user-requested deletions:
+50 7 20 60 95 35 15 22 45 58 91 100 10 8 73 88 23 41 67 4 99 44 65 77 29 84 62 19 33 97 12 85 56 17 49 
+
+
