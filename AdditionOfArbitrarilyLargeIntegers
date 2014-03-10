@@ -1,0 +1,655 @@
+CODE,FOLLOWED BY OUTPUT DATA
+
+
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: Long Integer                                           */
+/*                                                                            */
+/*              Date: March 10, 2014                                          */
+/*                                                                            */
+/*              Objective:                                                    */
+/*                                                                            */
+/*              Use linked lists and string processing to implement           */
+/*              addition of arbitrary length integers.                        */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+
+// input and output files are global
+FILE *inputFile, *outputFile;
+
+// more preprocessor directives
+#define LOG_TO_OUTPUT_FILE true
+#define CONSOLE_ONLY false
+#define EXIT_WITH_ERROR_STATUS -1
+#define BUFFERSIZE 1024				// set buffer size to 1024 chars, used for processing sequential file records
+#define SINGLESPACE ""
+#define DOUBLESPACE "\n"
+#define STRINGTERMINATOR '\0'
+#define BLOCK 4						// LONGINT (long integer operands) are divided into blocks of this many digits
+#define MAXSTACK 100				// size of LIFO (stack)
+#define EMPTYSTACK -1				// value of stack.top when stack is empty
+
+// global declaration, LIFO (stack) used to process long integer operands from input data file
+// each element is a pointer to a dynamically allocated string
+typedef struct stack {
+	int top;
+	char *stackElement[MAXSTACK];
+} STACK;
+
+// global declaration, define LONGINT (long integer) data structure
+typedef struct longInt {
+	char block[BLOCK+1];	// string of BLOCK-many chars, need +1 for string terminator '\0'
+	struct longInt *next;	// pointer to next block, in decreasing order of numerical significance
+} LONGINT;
+
+// prototype function declarations, followed by function definitions
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+bool myStringToInt(int *, char *);
+void * myMalloc(int);
+bool stackIsEmpty(STACK *);
+char * popStack(STACK *);
+void pushStack(STACK *, char *);
+bool longIntegerStringFormat(char[]);
+void processInputFile(STACK *);
+void longIntAsList(LONGINT *);
+char * longIntAsString(LONGINT *);
+LONGINT * makeBlock(LONGINT *, char[]);
+LONGINT * longIntFromString(char[], int);
+LONGINT * reverseBlocks(LONGINT *);
+void copyBlock(char[], char[]);
+LONGINT * sumUsingLinkedListFormat(LONGINT *, LONGINT *);
+void wrapperForAdditionAlgorithm(char *, char *);
+void processStack(STACK *);
+int main(void);
+
+// log exit status and terminate
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+
+}
+
+// log message string to console and to output data file
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString == NULL) {
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// convert string to integer
+// long and int range violation checks are left for future implementation
+bool myStringToInt(int *num, char *str) {
+	char *ptr;
+	*num = (int) strtol(str, &ptr, 10);
+	if (*ptr=='\0') {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// "wrapper" for malloc function, avoids duplication of error checking for NULL pointer if malloc fails
+void * myMalloc(int numberOfBytes) {
+	void * p;
+	p = malloc(numberOfBytes);
+	if (p==NULL) {
+		myExit("unable to allocate dynamic memory\n", LOG_TO_OUTPUT_FILE);	// abort execution
+
+	}
+	return p;
+}
+
+// test and return stack is empty comdition
+bool stackIsEmpty(STACK *pointerToStack) {
+	if (pointerToStack->top==EMPTYSTACK) {
+		return true;
+	} else
+		return false;
+}
+
+// pop from stack, returns pointer to a dynamically allocated string
+char * popStack(STACK *pointerToStack) {
+	if (stackIsEmpty(pointerToStack)) {
+		const char * const stackUnderflowMessage = "stack underflow\n";
+		logToConsoleAndOutputFile(stackUnderflowMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL; // never gets here, but this makes Eclipse warning message disappear
+
+	} else {
+		return(pointerToStack->stackElement[pointerToStack->top--]);
+	}
+}
+
+// push pointer to a dynamically allocated string onto stack
+// memory for string is allocated in calling function "processInputFile"
+void pushStack(STACK *pointerToStack, char *stringData) {
+	if (pointerToStack->top == MAXSTACK - 1)  {
+		const char * const stackOverflowMessage = "stack overflow\n";
+		logToConsoleAndOutputFile(stackOverflowMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	pointerToStack->stackElement[++(pointerToStack->top)] = stringData;
+	return;
+}
+
+// returns true if every char in string is digit '0' thru '9'; for processing long int string operands from input file
+bool longIntegerStringFormat(char stringData[]) {
+	for (int i=0; i < strlen(stringData); i++) {
+		if (!isdigit((int) stringData[i])) {
+			return false;
+
+		}
+	}
+	return true;
+}
+
+// all processing of input data from inputFile.txt
+void processInputFile(STACK *p2Stack) {
+
+	// local declarations needed for processing
+	char fileRecord[BUFFERSIZE];					// buffer for input record from file
+	const char *record = fileRecord;				// declarations for string processing
+	char *token, *newString;									// declarations for string processing
+
+	// more local declarations, string constants used as output to outputFile.txt and to console
+	const char * const inputFileOpenMsg = "inputFile.txt opened for read access\ncopying input data\n\n";
+	const char * const inputFileOpenErrorMsg = "inputFile.txt could not be opened with read access\n";
+	const char * const inputFileErrorOnRead = "file error on inputFile.txt\n";
+	const char * const inputFileUnexpectedData = "encountered unexpected data from inputFile.txt\n";
+	const char * const inputFileEOF = "\n\nencountered EOF from inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+	const char * const memoryMsg = "error, memory for new list element not allocated\n";
+
+	if ((inputFile = fopen("inputFile.txt", "r")) == NULL) {
+		logToConsoleAndOutputFile(inputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	logToConsoleAndOutputFile(inputFileOpenMsg, NULL);
+
+	// loop, process every record from input file
+	while (!feof(inputFile)) {
+		record = fgets(fileRecord, BUFFERSIZE, inputFile);	// reads record from input file
+		if (record == NULL) {
+			break;
+
+		}
+		logToConsoleAndOutputFile(record, NULL);	// copy record of input to output file
+
+		// loop to parse record as one/more strings, process each string
+		token = strtok(fileRecord, " \n");
+		while (token != NULL) {
+			strcpy(newString = myMalloc(strlen(token) + 1), token);
+			if (strcmp(token, "+") == 0) {
+				pushStack(p2Stack, newString);
+				//printf("push \"%s\" onto stack**\n", token);
+			} else if (longIntegerStringFormat(token)) {
+				pushStack(p2Stack, newString);
+				//printf("push \"%s\" onto stack\n", token);
+			} else {
+				// string from input file not recognized as an operator ("+") or operand, log error and abort
+				logToConsoleAndOutputFile("parsed unexpected string data \"%s\" from inputFile.txt\n", token);
+				myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+			}
+			token = strtok(NULL, " \n");
+		} // ends processing of record from input file
+	} // ends processing of data from input file
+
+	if (feof(inputFile)) {
+		logToConsoleAndOutputFile(inputFileEOF, NULL);				// encountered EOF from inputFile.txt
+	} else if (ferror(inputFile)) {
+		logToConsoleAndOutputFile(inputFileErrorOnRead, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);			// error on input file, abort
+
+	} else if (record == NULL) {
+		logToConsoleAndOutputFile(inputFileUnexpectedData, NULL);	// did not get well-formed record, abort
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+
+	// clean up by closing input file and logging file status
+	if (fclose(inputFile) != 0) {
+		logToConsoleAndOutputFile(inputFileCloseErrorMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else {
+		logToConsoleAndOutputFile(inputFileCloseMessage, NULL);
+	}
+}
+
+// converts long integer to the blocked list format and writes to output data file and console
+void longIntAsList(LONGINT *longInt) {
+	char listBuffer[BUFFERSIZE] = "";
+	while (longInt != NULL) {
+		strcat(listBuffer, &longInt->block);
+		strcat(listBuffer, " ");
+		longInt = longInt->next;
+	}
+	strcat(listBuffer, "\n\n");
+	logToConsoleAndOutputFile(listBuffer, NULL);
+}
+
+// converts long integer to string format and returns string
+char * longIntAsString(LONGINT *longInt) {
+	char *stringData;
+	char listBuffer[BUFFERSIZE] = "";
+	while (longInt != NULL) {
+		strcat(listBuffer, &longInt->block);
+		longInt = longInt->next;
+	}
+	strcat(listBuffer, "\n");
+	stringData = myMalloc(strlen(listBuffer) +1);		// +1 makes space for string terminator '\0'
+	strcat(stringData, "");
+	strcat(stringData, &listBuffer);
+	return stringData;
+}
+
+// adds first/next block of BLOCK-many digits to long integer list structure
+// blocks come in order from least significant to most significant, each new block goes to front of list
+LONGINT * makeBlock(LONGINT *longInt, char blockString[]) {
+	LONGINT *returnVal = myMalloc(sizeof(LONGINT));
+	returnVal->next = longInt;
+	for (int i=0; i < BLOCK+1; i++) {
+		returnVal->block[i] = blockString[i];
+	}
+	return returnVal;
+}
+
+// processes long integer operand string to get the blocks of digits, from least significant to most significant
+// returns pointer to the head of the list, which is the most significant block of digits
+LONGINT * longIntFromString(char stringRep[], int strlenOfstringRep) {
+	LONGINT *returnVal = NULL;
+	char *blockString;
+	char blockTemplate[BLOCK+1];
+	int nchars;
+	for (nchars = strlenOfstringRep-BLOCK; nchars >= 0; nchars = nchars - BLOCK) {
+		blockTemplate[0] = STRINGTERMINATOR;	// ready for next block
+		blockString = strncat(&blockTemplate[0], &stringRep[nchars], BLOCK);
+		returnVal = makeBlock(returnVal, blockString);
+	}
+	if (-nchars == BLOCK) {
+		return returnVal;
+
+	}
+	blockTemplate[0] = STRINGTERMINATOR;		// ready for last block
+	for (int i = BLOCK + nchars; i < BLOCK; i++) {
+		blockString = strncat(&blockTemplate[0], " ", 1);
+	}
+	blockString = strncat(blockString, &stringRep[0], nchars + BLOCK);
+	returnVal = makeBlock(returnVal, blockString);
+	return returnVal;
+}
+
+// reverses list order of blocks of digits that make a long integer
+// used to implement my long integer addition algorithm
+LONGINT * reverseBlocks(LONGINT *longInt) {
+	LONGINT *returnVal = NULL;
+	LONGINT *nextBlock;
+	while (longInt != NULL) {
+		nextBlock = longInt->next;
+		longInt->next = returnVal;
+		returnVal = longInt;
+		longInt = nextBlock;
+	}
+	return returnVal;
+}
+
+// copy array of BLOCK-many chars to destination array (parameter #1) from source array (parameter #2)
+void copyBlock(char copy[], char source[]) {
+	for (int i = 0; i < BLOCK; i++) {
+		copy[i] = source[i];
+	}
+}
+
+// implements long integer addition algorithm, returns long integer representing sum of long integer operands
+// sums long integer operands by adding the blocks of digits from least significant to most significant
+// int "carry" takes care of the carries from each block sum to the next most significant block
+// leading zeros suppressed only in the most significant digits block, proper conversion from linked list to string format
+LONGINT * sumUsingLinkedListFormat(LONGINT *operand1, LONGINT *operand2) {
+	LONGINT *sumOfOperands = NULL;
+	int valOfBlockFromOperand1,  valOfBlockFromOperand2;
+	int divisor = 1;
+	int carry = 0;
+	int blockSum;
+	int convert;
+	char blockSumString[BLOCK+1];
+	char blockFromOperand1[BLOCK+1], blockFromOperand2[BLOCK+1];
+	const char * errorMsg = "myStringToInt encountered conversion error, from addByBlocks\n";
+	/*
+	NEEDS MORE WORK TO DEALLOCATE SOME STRINGS AFTER THEY ARE NO LONGER NEEDED VIA "free"
+	PROBLEM IS WHEN I CALL MY "longIntAsString" FUNCTION
+	char *savePointerToStringData;
+	*/
+	/*
+	REMOVED AFTER USING TO DEBUG
+	char dBuffer[BUFFERSIZE];
+	*/
+
+	logToConsoleAndOutputFile("operand1 converted to list\n", NULL);
+	longIntAsList(operand1);
+	logToConsoleAndOutputFile("operand2 converted to list\n", NULL);
+	longIntAsList(operand2);
+	operand1 = reverseBlocks(operand1);
+	operand2 = reverseBlocks(operand2);
+	/*
+	longIntAsList(operand1);
+	longIntAsList(operand2);
+	*/
+	for (int i=1; i <= BLOCK; i++) {
+		divisor = divisor * 10;
+	}
+	while (true) {
+		if (operand1 == NULL && operand2 == NULL) {
+			break;
+
+		}
+		if (operand1 == NULL && operand2 != NULL) {
+			blockFromOperand1[0] = '0';
+			blockFromOperand1[1] = STRINGTERMINATOR;
+			copyBlock(blockFromOperand2, operand2->block);
+			operand2 = operand2->next;
+		} else if (operand1 != NULL && operand2==NULL) {
+			blockFromOperand2[0] = '0';
+			blockFromOperand2[1] = STRINGTERMINATOR;
+			copyBlock(blockFromOperand1, operand1->block);
+			operand1 = operand1->next;
+		} else {
+			copyBlock(blockFromOperand1, operand1->block);
+			operand1 = operand1->next;
+			copyBlock(blockFromOperand2, operand2->block);
+			operand2 = operand2->next;
+		}
+		if (myStringToInt(&convert, &blockFromOperand1[0])) {
+			valOfBlockFromOperand1 = convert;
+		} else {
+			logToConsoleAndOutputFile(errorMsg, NULL);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+		if (myStringToInt(&convert, &blockFromOperand2[0])) {
+			valOfBlockFromOperand2 = convert;
+		} else {
+			logToConsoleAndOutputFile(errorMsg, NULL);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+		blockSum = (valOfBlockFromOperand1 + valOfBlockFromOperand2 + carry) % divisor;
+		carry = (valOfBlockFromOperand1 + valOfBlockFromOperand2 + carry) / divisor;
+		/*
+		sprintf(dBuffer, "%04u %04u %04u %04u\n", valOfBlockFromOperand1, valOfBlockFromOperand2, blockSum, carry);
+		logToConsoleAndOutputFile(dBuffer, NULL);
+		*/
+		sprintf(blockSumString, "%04u", blockSum);
+		sumOfOperands = makeBlock(sumOfOperands, blockSumString);
+	}
+	if (carry > 0) {
+		sprintf(blockSumString, "%4u", carry);
+		sumOfOperands = makeBlock(sumOfOperands, blockSumString);
+	}
+	logToConsoleAndOutputFile("sum of operands converted to list\n", NULL);
+	longIntAsList(sumOfOperands);
+	logToConsoleAndOutputFile("sum of operands converted to string\n", NULL);
+	logToConsoleAndOutputFile(longIntAsString(sumOfOperands), NULL);
+	//free(savePointerToStringData);
+	return sumOfOperands;
+}
+
+// "wrapper", calls long integer addition algorithm for two long integer operands
+void wrapperForAdditionAlgorithm(char *operand1, char *operand2) {
+	LONGINT *longInt1;
+	LONGINT *longInt2;
+	LONGINT *sum;
+	int nblanks, i;
+	char formatOperand1[BUFFERSIZE], formatOperand2[BUFFERSIZE];
+	/*
+	NEEDS MORE WORK TO DEALLOCATE SOME STRINGS AFTER THEY ARE NO LONGER NEEDED VIA "free"
+	PROBLEM IS WHEN I CALL MY "longIntAsString" FUNCTION
+	char *savePointerToStringData;
+	*/
+
+	logToConsoleAndOutputFile("requesting add operation\n", NULL);
+	logToConsoleAndOutputFile("operand 1 = %s\n", operand1);
+	logToConsoleAndOutputFile("operand 2 = %s\n\n", operand2);
+	longInt1 = longIntFromString(operand1, strlen(operand1));
+	longInt2 = longIntFromString(operand2, strlen(operand2));
+	sum = sumUsingLinkedListFormat(longInt1, longInt2);
+
+	nblanks = strlen(longIntAsString(sum)) - strlen(operand1) -1;
+	formatOperand1[0] = STRINGTERMINATOR;
+	if (nblanks >= 0) {
+		for (i=1; i<= nblanks; i++) {
+			strcat(formatOperand1, " ");
+		}
+		strcat(formatOperand1, operand1);
+	}
+	nblanks = strlen(longIntAsString(sum)) - strlen(operand2) -1;
+	formatOperand2[0] = STRINGTERMINATOR;
+	if (nblanks >= 0) {
+		for (i=1; i<= nblanks; i++) {
+			strcat(formatOperand2, " ");
+		}
+		strcat(formatOperand2, operand2);
+	}
+	logToConsoleAndOutputFile("\n      operand 1 = %s\n", formatOperand1);
+	logToConsoleAndOutputFile("      operand 2 = %s\n", formatOperand2);
+	logToConsoleAndOutputFile("sum of operands = %s\n\n", longIntAsString(sum));
+	//free(savePointerToStringData);
+	}
+
+// long integer operands for "add" algorithm calls are stacked
+// remove and process the operands in reverse order of the sequence in which they came in the input data file
+// seems consistent with postfix notation that I used for the input data format
+void processStack(STACK *p2Stack) {
+	char *stringFromStack, *operand1, *operand2;
+	while (!stackIsEmpty(p2Stack)) {
+		stringFromStack = popStack(p2Stack);
+		if (strcmp(stringFromStack, "+") == 0) {
+			free(stringFromStack);
+			operand1 = popStack(p2Stack);
+			operand2 = popStack(p2Stack);
+			wrapperForAdditionAlgorithm(operand1, operand2);
+			free(operand1); free(operand2);
+		} else {
+			free(stringFromStack);
+		}
+	}
+}
+
+// function main begins program execution
+int main(void) {
+
+	// local declarations needed for processing
+
+	// more local declarations, string constants used as output to outputFile.txt and to console
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+
+	// initialize the long integer operands stack to "empty"
+	STACK s, *pointerToStack;
+	s.top = EMPTYSTACK;
+	pointerToStack = &s;
+
+	// dynamic execution begins here, start by opening output file
+	if ((outputFile  = fopen("outputFile.txt", "w")) == NULL) {
+		printf (outputFileOpenErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	}
+	// log to console and output file
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+
+	// function handles all input data file processing
+	// stacks long integer operands
+	processInputFile(pointerToStack);
+
+	// process operands stack, performing all "add" operations as specified in the input data file
+	processStack(pointerToStack);
+
+	// output value of INT_MAX (compiler specific, just for my own information)
+	char compilerSpecific[BUFFERSIZE];
+	sprintf(compilerSpecific, "%d", INT_MAX);
+	logToConsoleAndOutputFile("compiler specific, largest int value INT_MAX is %s\n\n", &compilerSpecific);
+
+	// close output file and log file status
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	} else {
+		printf("%s", outputFileCloseMsg);
+	}
+	// log out message for user and terminate as requested
+	myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+}
+
+
+
+
+outputFile.txt opened for write access
+inputFile.txt opened for read access
+copying input data
+
+99999999 99999999 +
+9999 9999 +
+9999 1 +
+64324564257936835497210698463523456234 954680325257568512973371196238845129776544789456 +
+954680325257568512973371196238845129776544789456 64324564257936835497210698463523456234 +
+
+
+encountered EOF from inputFile.txt
+inputFile.txt was closed without error
+
+requesting add operation
+operand 1 = 64324564257936835497210698463523456234
+operand 2 = 954680325257568512973371196238845129776544789456
+
+operand1 converted to list
+  64 3245 6425 7936 8354 9721 0698 4635 2345 6234 
+
+operand2 converted to list
+9546 8032 5257 5685 1297 3371 1962 3884 5129 7765 4478 9456 
+
+sum of operands converted to list
+9546 8032 5321 8930 7723 1308 0317 3605 5828 2400 6824 5690 
+
+sum of operands converted to string
+954680325321893077231308031736055828240068245690
+
+      operand 1 =           64324564257936835497210698463523456234
+      operand 2 = 954680325257568512973371196238845129776544789456
+sum of operands = 954680325321893077231308031736055828240068245690
+
+
+requesting add operation
+operand 1 = 954680325257568512973371196238845129776544789456
+operand 2 = 64324564257936835497210698463523456234
+
+operand1 converted to list
+9546 8032 5257 5685 1297 3371 1962 3884 5129 7765 4478 9456 
+
+operand2 converted to list
+  64 3245 6425 7936 8354 9721 0698 4635 2345 6234 
+
+sum of operands converted to list
+9546 8032 5321 8930 7723 1308 0317 3605 5828 2400 6824 5690 
+
+sum of operands converted to string
+954680325321893077231308031736055828240068245690
+
+      operand 1 = 954680325257568512973371196238845129776544789456
+      operand 2 =           64324564257936835497210698463523456234
+sum of operands = 954680325321893077231308031736055828240068245690
+
+
+requesting add operation
+operand 1 = 1
+operand 2 = 9999
+
+operand1 converted to list
+   1 
+
+operand2 converted to list
+9999 
+
+sum of operands converted to list
+   1 0000 
+
+sum of operands converted to string
+   10000
+
+      operand 1 =        1
+      operand 2 =     9999
+sum of operands =    10000
+
+
+requesting add operation
+operand 1 = 9999
+operand 2 = 9999
+
+operand1 converted to list
+9999 
+
+operand2 converted to list
+9999 
+
+sum of operands converted to list
+   1 9998 
+
+sum of operands converted to string
+   19998
+
+      operand 1 =     9999
+      operand 2 =     9999
+sum of operands =    19998
+
+
+requesting add operation
+operand 1 = 99999999
+operand 2 = 99999999
+
+operand1 converted to list
+9999 9999 
+
+operand2 converted to list
+9999 9999 
+
+sum of operands converted to list
+   1 9999 9998 
+
+sum of operands converted to string
+   199999998
+
+      operand 1 =     99999999
+      operand 2 =     99999999
+sum of operands =    199999998
+
+
+compiler specific, largest int value INT_MAX is 2147483647
+
