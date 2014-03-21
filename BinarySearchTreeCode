@@ -1,0 +1,892 @@
+/* README, followed by C program, followed by Output Data */
+
+
+I have one known remaining "bug" (software defect), where this unexpected data appears in the output file:
+
+processing string from input data -> 0
+generates delete request for key value 2014131768
+call to delete key value 0
+
+The desired output data would be:
+
+processing string from input data -> 0
+generates delete request for key value 0
+call to delete key value 0
+
+So it looks like some kind of integer to string format conversion problem in my code. It may be something peculiar
+to the Eclipse C language developer's toolkit that I am using on my Mac. This Eclipse package does some other things
+that are not at all logical. I have found workarounds.
+
+I have implemented both recursion and "flat" (non-recursion) C language functions for writing the binary search tree
+data to the output file in preorder, inorder and postorder formats.
+
+I have a delete function 'deleteKey' that searches for a specified key value in the binary search tree and removes
+that node if there is a match. My 'deleteKey' function uses recursion. I do not have a non-recursive version of it. I do
+not have a 'findKey' function that would accept a specified key value and return a pointer to the matching node without
+removing that node, or return NULL if there is no match. Obviously, that would not be hard to make from the working code
+that I already have.
+
+I think that my "flat" or non-recursive version of the inorder nodes traversal as implemented via 'inorderFlat' is
+probably not as straightforward or as efficient as it could be, with some modest reworking. I have a trick of creating
+temporary copies of the nodes on the fly (dynamically) and then deallocating all of these copies as the last step.
+I use two stacks. The second stack has all the pointers to the "copy" nodes that are deallocated in the last step
+of this function.
+
+After processing the input file data, the binary search tree starts with 35 nodes. After the console input, 7 nodes are
+deleted, leaving just 28 nodes. My C language function 'freeAll' uses recursion to deallocate these last 28 nodes and
+free up that much dynamic memory before the program terminates. A "flat" or non-recursive version of this 'freeAll'
+function is also possible, but I am moving on without that to the next assignment. 
+
+
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: Binary Trees                                           */
+/*                                                                            */
+/*              Filename: BinaryTrees.c                                       */
+/*                                                                            */
+/*              Date: March 24, 2014                                          */
+/*                                                                            */
+/*              Objective:                                                    */
+/*                                                                            */
+/*              Binary search tree data structure and traversal algorithms    */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+//
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+
+// input and output data files are global
+//
+FILE *inputFile, *outputFile;
+
+// more preprocessor directives
+//
+#define LOG_TO_OUTPUT_FILE true		// write output data to console and to output data file
+#define CONSOLE_ONLY false			// write output data to console only
+#define EXIT_WITH_ERROR_STATUS -1	// exit status assigned to program upon error/abort termination
+#define BUFFERSIZE 1024				// set buffer size to 1024 chars, used for lines (records) from input data file
+#define SINGLESPACE "\n"			// used for formatting output with single-spaced lines
+#define DOUBLESPACE "\n\n"			// used for formatting output with double-spaced lines
+#define STRINGTERMINATOR '\0'		// string data is terminated with the '\0' (null) character
+#define MAXSTACK 100				// defines capacity of LIFO (stack) data structures as MAXSTACK-many elements
+#define EMPTYSTACK -1				// value of stack.top when stack is empty
+#define ROOT true					// designates that node passed to function is a binary search tree root node
+#define ISROOT NULL					// root node has no ancestor node (defined as NULL)
+
+// global declaration of binary search tree data structure
+//
+// stores a different (non-duplicated) key value (int) at every node
+//
+typedef struct binaryTree {
+	int key;
+	struct binaryTree *goLeft;
+	struct binaryTree *goRight;
+} BST;
+
+// global declaration of LIFO (stack) data structure
+//
+// stack elements are pointers to nodes of binary search tree
+//
+typedef struct stack {
+	int top;
+	BST *stackElement[MAXSTACK];
+} STACK;
+
+// prototype function declarations, followed by function definitions
+//
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+bool myStringToInt(int *, char *);
+void * myMalloc(int);
+bool stackIsEmpty(STACK *);
+BST * popStack(STACK *);
+void pushStack(STACK *, BST *);
+int countNodesUsingRecursion(BST *);
+BST * newNode(int);
+BST * insertKey(BST *, int);
+int freeAll(BST *);
+void preorderRecursion(BST *, bool);
+void inorderRecursion(BST *, bool);
+void postorderRecursion(BST *, bool);
+BST * copyNode(BST *);
+void preorderFlat(BST *);
+void inorderFlat(BST *);
+void postorderFlat(BST *);
+BST * successorNode(BST *);
+BST * deleteKey(BST *, BST *, int);
+BST * processInputFile();
+void deletionOfKeyValues(BST *);
+int main(void);
+
+// log exit status and terminate
+//
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+
+}
+
+// log generic or customized message string to console and to output data file
+//
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString==NULL) {
+		// message is not customized
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		// message includes %s conversion of outputString parameter to add variable information
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// convert string data to integer value
+//
+// long and int format over/underflow checks are left for future implementation
+//
+bool myStringToInt(int *num, char *str) {
+	char *ptr;
+	*num = (int) strtol(str, &ptr, 10);
+	if (*ptr=='\0') {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// "wrapper" for dynamic memory allocation function
+//
+// avoids duplicating error check for fail condition
+//
+void * myMalloc(int numberOfBytes) {
+	void * p;
+	p = malloc(numberOfBytes);
+	if (p==NULL) {
+		logToConsoleAndOutputFile("unable to allocate dynamic memory\n", NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL; // never gets here, but this makes Eclipse warning message disappear
+
+	}
+	return p;	// returns pointer to dynamically allocated memory
+}
+
+// test and return true on stack empty condition
+//
+bool stackIsEmpty(STACK *pointerToStack) {
+	if (pointerToStack->top==EMPTYSTACK) {
+		return true;
+	} else
+		return false;
+}
+
+// remove top element from stack, returns pointer to node of binary search tree
+//
+BST * popStack(STACK *pointerToStack) {
+	if (stackIsEmpty(pointerToStack)) {
+		const char * const stackUnderflowMessage = "stack underflow\n";
+		logToConsoleAndOutputFile(stackUnderflowMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);	// abort program on stack underflow condition
+		return NULL; // never gets here, but this makes Eclipse warning message disappear
+
+	} else {
+		return(pointerToStack->stackElement[pointerToStack->top--]);
+	}
+}
+
+// save pointer to node of binary search tree on top of stack
+//
+void pushStack(STACK *pointerToStack, BST *node) {
+	if (pointerToStack->top == MAXSTACK - 1)  {
+		const char * const stackOverflowMessage = "stack overflow\n";
+		logToConsoleAndOutputFile(stackOverflowMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);	// abort program on stack overflow condition
+
+	}
+	pointerToStack->stackElement[++(pointerToStack->top)] = node;
+	return;
+}
+
+// returns count of how many nodes (calling node and all of its descendants)
+// uses recursion
+int countNodesUsingRecursion(BST *node) {
+	int n = 0;
+	if (node != NULL) {
+		return countNodesUsingRecursion(node->goLeft) + countNodesUsingRecursion(node->goRight) + 1;
+	}
+	return n;
+}
+
+// allocate a new BST node with the specified key value and return the pointer
+//
+BST * newNode(int key) {
+	BST *node = myMalloc(sizeof(BST));
+	node->key = key; node->goLeft = (node->goRight = NULL);
+	return node;
+}
+
+// add a new search key to BST by allocating and inserting a new node
+//
+// maintain required format, every left (right) descendant must have key < (>) key value of parent node
+// each search key value is unique (no duplicate key values), new node is always a leaf node (no descendants)
+//
+BST * insertKey(BST *node, int newSearchKey) {
+	if (node==NULL) {
+		return newNode(newSearchKey);
+	} else if (newSearchKey < node->key) {
+		if (node->goLeft==NULL) {
+			return node->goLeft = newNode(newSearchKey);
+		} else {
+			return insertKey(node->goLeft, newSearchKey);
+		}
+	} else if (newSearchKey > node->key) {
+		if (node->goRight==NULL) {
+			return node->goRight = newNode(newSearchKey);
+		} else {
+			return insertKey(node->goRight, newSearchKey);
+		}
+	} else {
+		fprintf(outputFile, "\nencountered duplicate search key %d", newSearchKey);
+		return NULL;
+	}
+}
+
+// deallocate memory for calling node and all of its descendants
+// uses recursion
+int freeAll(BST *node) {
+	int countFree = 0;
+	if (node != NULL) {
+		countFree = countFree + freeAll(node->goLeft);
+		countFree = countFree + freeAll(node->goRight);
+		free(node);
+		countFree = countFree + 1;
+	}
+	return countFree;
+}
+
+// preorder traversal of BST using recursion, output formatted data to output data file
+//
+void preorderRecursion(BST *node, bool isRoot) {
+	if (isRoot) {
+		fprintf(outputFile, "traversing using preorder (recursive) from root node\n");
+	}
+	if (node != NULL) {
+		fprintf(outputFile, "%d ", node->key);
+		preorderRecursion(node->goLeft, false);
+		preorderRecursion(node->goRight, false);
+	}
+}
+
+// inorder traversal of BST using recursion, output formatted data to output data file
+//
+void inorderRecursion(BST *node, bool isRoot) {
+	if (isRoot) {
+		fprintf(outputFile, "traversing using inorder (recursive) from root node\n");
+	}
+	if (node != NULL) {
+		inorderRecursion(node->goLeft, false);
+		fprintf(outputFile, "%d ", node->key);
+		inorderRecursion(node->goRight, false);
+	}
+}
+
+// postorder traversal of BST using recursion, output formatted data to output data file
+//
+void postorderRecursion(BST *node, bool isRoot) {
+	if (isRoot) {
+		fprintf(outputFile, "traversing using postorder (recursive) from root node\n");
+	}
+	if (node != NULL) {
+		postorderRecursion(node->goLeft, false);
+		postorderRecursion(node->goRight, false);
+		fprintf(outputFile, "%d ", node->key);
+	}
+}
+
+// "clone" by allocating a new BST Node, with identical key value and descendant nodes; return pointer
+//
+BST * copyNode(BST *node) {
+	BST *copy = newNode(node->key);
+	copy->goLeft = node->goLeft;
+	copy->goRight = node->goRight;
+	return copy;
+}
+
+// preorder traversal of BST using "flat" (non-recursive) algorithm, output formatted data to output data file
+//
+void preorderFlat(BST *node) {
+
+	// declare local stack and initialize to "empty"
+	STACK s, *pStack;
+	s.top = EMPTYSTACK;
+	pStack = &s;
+
+	fprintf(outputFile, "traversing using preorder (non-recursive) from root node\n");
+	if (node==NULL) {
+		return;
+
+	}
+	pushStack(pStack, node);
+	while(!stackIsEmpty(pStack)) {
+		node = popStack(pStack);
+		fprintf(outputFile, "%d ", node->key);
+		if (node->goRight != NULL) {
+			pushStack(pStack, node->goRight);
+		}
+		if (node->goLeft != NULL) {
+			pushStack(pStack, node->goLeft);
+		}
+	}
+}
+
+// inorder traversal of BST using "flat" (non-recursive) algorithm, output formatted data to output data file
+//
+void inorderFlat(BST *node) {
+
+	// declare local stack and initialize to "empty"
+	STACK s, *pStack;
+	s.top = EMPTYSTACK;
+	pStack = &s;
+
+	// declare local stack and initialize to "empty"
+	STACK s2, *secondStack;
+	s2.top = EMPTYSTACK;
+	secondStack = &s2;
+
+	BST *nodeCopy;
+
+	fprintf(outputFile, "traversing using inorder (non-recursive) from root node\n");
+	if (node==NULL) {
+		return;
+
+	}
+	pushStack(pStack, node);
+	while(!stackIsEmpty(pStack)) {
+		node = popStack(pStack);
+		nodeCopy = copyNode(node);
+		pushStack(secondStack, nodeCopy);
+		if (nodeCopy->goRight != NULL) {
+			pushStack(pStack, nodeCopy->goRight);
+			nodeCopy->goRight = NULL;
+			pushStack(pStack, nodeCopy);
+		} else if (nodeCopy->goLeft != NULL) {
+			BST *save = nodeCopy->goLeft;
+			nodeCopy->goLeft = NULL;
+			pushStack(pStack, nodeCopy);
+			pushStack(pStack, save);
+		} else {
+			fprintf(outputFile, "%d ", node->key);
+		}
+	}
+	int n = 0;
+	while (!stackIsEmpty(secondStack)) {
+		free(popStack(secondStack));
+		n++;
+	}
+	// used for debugging
+	// fprintf(outputFile, "\ncreated and deleted %d temporary nodes while traversing", n);
+}
+
+// postorder traversal of BST using "flat" (non-recursive) algorithm, output formatted data to output data file
+//
+void postorderFlat(BST *node) {
+
+	// declare local stack and initialize to "empty"
+	STACK s, *pStack;
+	s.top = EMPTYSTACK;
+	pStack = &s;
+
+	// declare local stack and initialize to "empty"
+	STACK s2, *secondStack;
+	s2.top = EMPTYSTACK;
+	secondStack = &s2;
+
+	fprintf(outputFile, "traversing using postorder (non-recursive) from root node\n");
+	if (node==NULL) {
+		return;
+
+	}
+	pushStack(pStack, node);
+	while(!stackIsEmpty(pStack)) {
+		node = popStack(pStack);
+		if (node->goLeft != NULL) {
+			pushStack(pStack, node->goLeft);
+		}
+		if (node->goRight != NULL) {
+			pushStack(pStack, node->goRight);
+		}
+		pushStack(secondStack, node);
+	}
+	while(!stackIsEmpty(secondStack)) {
+		fprintf(outputFile, "%d ", popStack(secondStack)->key);
+	}
+}
+
+// finds and returns inorder successor of calling node, needed to delete any node with both left and right descendants
+//
+BST * successorNode(BST *node) {
+	BST *nextKey = node;
+	if (nextKey==NULL) {
+		logToConsoleAndOutputFile("debug from successorNode, this should never happen\n", NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL; // never gets here, but this makes Eclipse warning message disappear
+
+	}
+	while (nextKey->goLeft != NULL) {
+		nextKey = nextKey->goLeft;
+	}
+	return nextKey;
+}
+
+// call with key value and delete matching node in BST, return pointer to updated BST
+// no deletion if key value does not match any node in BST
+// uses recursion
+//
+BST * deleteKey(BST *node, BST *ancestorNode, int keyValue) {
+	if (ancestorNode==NULL) {
+		fprintf(outputFile, "call to delete key value %d\n\n", keyValue);
+	}
+	if (node==NULL) {
+		fprintf(outputFile, "key value %d was not read from input file, or has already been deleted\n\n", keyValue);
+		return NULL;
+
+	}
+	if (keyValue < node->key) {
+		deleteKey(node->goLeft, node, keyValue);
+		return node;
+
+	}
+	if (keyValue > node->key) {
+		deleteKey(node->goRight, node, keyValue);
+		return node;
+
+	}
+	if (node->goLeft==NULL && node->goRight==NULL) {
+		free(node);
+		if (ancestorNode != NULL) {
+			if (keyValue < ancestorNode->key) {
+				ancestorNode->goLeft = NULL;
+			} else {
+				ancestorNode->goRight = NULL;
+			}
+		}
+		return ancestorNode;
+
+	}
+	if (node->goLeft==NULL) {
+		if (ancestorNode==NULL) {
+			ancestorNode = node->goRight;
+		} else if ((node->goRight)->key < ancestorNode->key) {
+			ancestorNode->goLeft = node->goRight;
+		} else {
+			ancestorNode->goRight = node->goRight;
+		}
+		free(node);
+		return ancestorNode;
+
+	}
+	if (node->goRight==NULL) {
+		if (ancestorNode==NULL) {
+			ancestorNode = node->goLeft;
+		} else if ((node->goLeft)->key < ancestorNode->key) {
+			ancestorNode->goLeft = node->goLeft;
+		} else {
+			ancestorNode->goRight = node->goLeft;
+		}
+		free(node);
+		return ancestorNode;
+
+	}
+	BST *s = successorNode(node->goRight);
+	BST *new = copyNode(s);
+	new->goLeft = node->goLeft;
+	new->goRight = node->goRight;
+	deleteKey(node->goRight, new, new->key);
+	if (ancestorNode==NULL) {
+		ancestorNode = new;
+	} else if (new->key < ancestorNode->key) {
+		ancestorNode->goLeft = new;
+	} else {
+		ancestorNode->goRight = new;
+	}
+	free(node);
+	return ancestorNode;
+
+}
+
+
+// all processing of input data from input data file inputFile.txt
+// find all key values from input data and generate the complete BST
+//
+BST * processInputFile() {
+
+	BST *rootNode = NULL;	// used to return pointer to root node of BST
+
+	// other local declarations needed for processing
+	//
+	char fileRecord[BUFFERSIZE];					// buffer for input record from file
+	const char *record = fileRecord;				// declarations for string processing
+	char *token;									// declarations for string processing
+	int keyValue;									// int format key value converted from string
+
+	// more local declarations, string constants used for messaging to output data file and to console
+	//
+	const char * const inputFileOpenMsg = "inputFile.txt opened for read access\nreading and processing input data\n\n";
+	const char * const inputFileOpenErrorMsg = "inputFile.txt could not be opened with read access\n";
+	const char * const inputFileErrorOnRead = "file error on inputFile.txt\n";
+	const char * const inputFileUnexpectedData = "encountered unexpected data from inputFile.txt\n";
+	const char * const inputFileEOF = "\n\nencountered EOF from inputFile.txt\n";
+	const char * const inputFileCloseMessage = "inputFile.txt was closed without error\n\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+	const char * const memoryMsg = "error, memory for new list element not allocated\n";
+
+	if ((inputFile = fopen("inputFile.txt", "r"))==NULL) {
+		logToConsoleAndOutputFile(inputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL;
+
+	}
+	logToConsoleAndOutputFile(inputFileOpenMsg, NULL);
+
+	// loop, process every record from input file
+	while (!feof(inputFile)) {
+		record = fgets(fileRecord, BUFFERSIZE, inputFile);	// reads record from input file
+		if (record==NULL) {
+			break;
+
+		}
+		logToConsoleAndOutputFile(record, NULL);	// copy record of input to output file
+
+		// loop to parse line (record) from input file as one/more strings, process each string
+		// each string that converts to an int format search key value is inserted as a new leaf node in the BST
+		token = strtok(fileRecord, ",\n");
+		while (token != NULL) {
+			if (myStringToInt(&keyValue, token)) {
+				// cannot overwrite pointer to BST root node
+				if (rootNode==NULL) {
+					rootNode = insertKey(NULL, keyValue);
+				} else {
+					insertKey(rootNode, keyValue);
+				}
+			} else {
+				// string from input file not recognized as an integer-valued key, log error and abort
+				logToConsoleAndOutputFile("\nparsed unexpected string data \"%s\" from inputFile.txt\n", token);
+				myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+				return NULL;
+
+			}
+			token = strtok(NULL, ",\n");
+		} // ends processing of single line (record) from input file
+	} // ends processing from input file
+
+	if (feof(inputFile)) {
+		logToConsoleAndOutputFile(inputFileEOF, NULL);				// encountered EOF from inputFile.txt
+	} else if (ferror(inputFile)) {
+		logToConsoleAndOutputFile(inputFileErrorOnRead, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);			// error on input file, abort
+		return NULL;
+
+	} else if (record==NULL) {
+		logToConsoleAndOutputFile(inputFileUnexpectedData, NULL);	// did not get well-formed record, abort
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL;
+
+	}
+
+	// clean up by closing input file and logging file status
+	if (fclose(inputFile) != 0) {
+		logToConsoleAndOutputFile(inputFileCloseErrorMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+		return NULL;
+
+	} else {
+		logToConsoleAndOutputFile(inputFileCloseMessage, NULL);
+	}
+
+	// calls to write specified data to output file
+	fprintf(outputFile, "there are %d nodes\n\n", countNodesUsingRecursion(rootNode));
+	preorderRecursion(rootNode, ROOT); fprintf(outputFile, DOUBLESPACE);
+	preorderFlat(rootNode); fprintf(outputFile, DOUBLESPACE);
+	inorderRecursion(rootNode, ROOT); fprintf(outputFile, DOUBLESPACE);
+	inorderFlat(rootNode); fprintf(outputFile, DOUBLESPACE);
+	postorderRecursion(rootNode, ROOT); fprintf(outputFile, DOUBLESPACE);
+	postorderFlat(rootNode); fprintf(outputFile, DOUBLESPACE);
+
+	return rootNode;	// returns pointer to root node of BST generated from input file data
+}
+
+// processes all user inputs from console
+// every key value entered from console generates a request to remove the matching node from the BST
+//
+void deletionOfKeyValues(BST *rootNode) {
+
+	// local declarations needed for processing
+	//
+	char stringIn[BUFFERSIZE];			// buffer for all chars entered until EOL or "return" key
+	bool userRT = false;				// encountered user requested termination string 'Q', initialize to false
+	bool invalidInput;					// encountered invalid input string
+	char *token;						// used to parse input buffer into comma(,) or blank separated strings
+	int keyValue;						// int value when input string is converted to column number
+
+	logToConsoleAndOutputFile("\n\nprogram accepts comma(,) or blank separated list of key values from console\n--key values to delete from binary search tree, followed by 'Q' to terminate\n", NULL);
+
+	// loop processes every line of data entered from console by user
+	while (true) {
+		logToConsoleAndOutputFile("requesting input from user\n", NULL);
+		fgets(stringIn, BUFFERSIZE, stdin);
+		logToConsoleAndOutputFile("parsing input data -> %s", stringIn);
+		token = strtok(stringIn, " ,\n");
+		// loop processes any/all strings from console input, delimited by comma(,) or white space
+		while (token != NULL) {
+			invalidInput = false;
+			if (strcmp(token,"Q") == 0) {
+				userRT = true;	// encountered user termination request Q
+				break;			// stop parsing input buffer for more strings
+
+			}
+			logToConsoleAndOutputFile("processing string from input data -> %s\n", token);
+			if (myStringToInt(&keyValue, token)) {
+				logToConsoleAndOutputFile("generates delete request for key value %d\n", keyValue);
+				rootNode = deleteKey(rootNode, ISROOT, keyValue);
+				inorderFlat(rootNode); fprintf(outputFile, DOUBLESPACE);
+				fprintf(outputFile, "there are now %d nodes\n\n\n", countNodesUsingRecursion(rootNode));
+			} else {
+				logToConsoleAndOutputFile("%s is not an integer, does not generate delete request\n\n", token);
+			}
+			token = strtok(NULL, " ,\n");	// next string from input buffer
+		}
+		if (userRT) {
+			break;	// already got termination request Q, do not get another line of input
+
+		}	// end loop to process strings from input record
+		logToConsoleAndOutputFile("termination request 'Q' not received, waiting for more input:\n", NULL);
+	}	// end loop to process line input from console
+	logToConsoleAndOutputFile("encountered user termination request 'Q'\n\n", NULL);
+}
+
+// function main begins dynamic program execution
+//
+int main(void) {
+
+	// local declarations needed for processing
+	//
+	BST *rootNode;	// pointer to root node of BST generated from input file data
+
+	// more local declarations, string constants used for messaging to output file and to console
+	//
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+
+	// dynamic execution begins here, start by opening output file
+	if ((outputFile  = fopen("outputFile.txt", "w"))==NULL) {
+		printf (outputFileOpenErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	}
+	// log to console and output file
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+
+	// function handles all input data file processing
+	rootNode = processInputFile();
+
+	fprintf(outputFile, "\n\nready to switch to console input for list of key-values to delete from binary search tree\n");
+	fprintf(outputFile, "\nthis is the binary search tree created from the input file \"inputFile.txt\"\n\n");
+	inorderFlat(rootNode);
+	fprintf(outputFile, "\n\nstarting with %d nodes\n\n", countNodesUsingRecursion(rootNode));
+
+	// process input from console
+	deletionOfKeyValues(rootNode);
+
+	// deallocate any remaining nodes of BST
+	fprintf(outputFile, "deallocated remaining %d nodes\n\n", freeAll(rootNode));
+
+	// close output file and log file status
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	} else {
+		printf("%s", outputFileCloseMsg);
+	}
+	// log out message for user and terminate as requested
+	myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+}
+
+
+outputFile.txt opened for write access
+inputFile.txt opened for read access
+reading and processing input data
+
+55, 62, 89, 85, 97, 56, 71, 82, 38, 49, 25, 67, 58, 92,
+       100, 44, 69, 72, 65, 52, 41, 84, 21, 60, 95, 12,
+       35, 42, 105, 99, 34, 47, 35, 79, 95, 50, 25, 51
+encountered duplicate search key 35
+encountered duplicate search key 95
+encountered duplicate search key 25
+
+encountered EOF from inputFile.txt
+inputFile.txt was closed without error
+
+there are 35 nodes
+
+traversing using preorder (recursive) from root node
+55 38 25 21 12 35 34 49 44 41 42 47 52 50 51 62 56 58 60 89 85 71 67 65 69 82 72 79 84 97 92 95 100 99 105 
+
+traversing using preorder (non-recursive) from root node
+55 38 25 21 12 35 34 49 44 41 42 47 52 50 51 62 56 58 60 89 85 71 67 65 69 82 72 79 84 97 92 95 100 99 105 
+
+traversing using inorder (recursive) from root node
+12 21 25 34 35 38 41 42 44 47 49 50 51 52 55 56 58 60 62 65 67 69 71 72 79 82 84 85 89 92 95 97 99 100 105 
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 38 41 42 44 47 49 50 51 52 55 56 58 60 62 65 67 69 71 72 79 82 84 85 89 92 95 97 99 100 105 
+
+traversing using postorder (recursive) from root node
+12 21 34 35 25 42 41 47 44 51 50 52 49 38 60 58 56 65 69 67 79 72 84 82 71 85 95 92 99 105 100 97 89 62 55 
+
+traversing using postorder (non-recursive) from root node
+12 21 34 35 25 42 41 47 44 51 50 52 49 38 60 58 56 65 69 67 79 72 84 82 71 85 95 92 99 105 100 97 89 62 55 
+
+
+
+ready to switch to console input for list of key-values to delete from binary search tree
+
+this is the binary search tree created from the input file "inputFile.txt"
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 38 41 42 44 47 49 50 51 52 55 56 58 60 62 65 67 69 71 72 79 82 84 85 89 92 95 97 99 100 105 
+
+starting with 35 nodes
+
+
+
+program accepts comma(,) or blank separated list of key values from console
+--key values to delete from binary search tree, followed by 'Q' to terminate
+requesting input from user
+parsing input data -> 71, 51, 38, 5, 0, 25, 42, 91, 35, 47, Q
+processing string from input data -> 71
+generates delete request for key value 71
+call to delete key value 71
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 38 41 42 44 47 49 50 51 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 34 nodes
+
+
+processing string from input data -> 51
+generates delete request for key value 51
+call to delete key value 51
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 38 41 42 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 33 nodes
+
+
+processing string from input data -> 38
+generates delete request for key value 38
+call to delete key value 38
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 41 42 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 32 nodes
+
+
+processing string from input data -> 5
+generates delete request for key value 5
+call to delete key value 5
+
+key value 5 was not read from input file, or has already been deleted
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 41 42 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 32 nodes
+
+
+processing string from input data -> 0
+generates delete request for key value 2014131768
+call to delete key value 0
+
+key value 0 was not read from input file, or has already been deleted
+
+traversing using inorder (non-recursive) from root node
+12 21 25 34 35 41 42 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 32 nodes
+
+
+processing string from input data -> 25
+generates delete request for key value 25
+call to delete key value 25
+
+traversing using inorder (non-recursive) from root node
+12 21 34 35 41 42 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 31 nodes
+
+
+processing string from input data -> 42
+generates delete request for key value 42
+call to delete key value 42
+
+traversing using inorder (non-recursive) from root node
+12 21 34 35 41 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 30 nodes
+
+
+processing string from input data -> 91
+generates delete request for key value 91
+call to delete key value 91
+
+key value 91 was not read from input file, or has already been deleted
+
+traversing using inorder (non-recursive) from root node
+12 21 34 35 41 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 30 nodes
+
+
+processing string from input data -> 35
+generates delete request for key value 35
+call to delete key value 35
+
+traversing using inorder (non-recursive) from root node
+12 21 34 41 44 47 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 29 nodes
+
+
+processing string from input data -> 47
+generates delete request for key value 47
+call to delete key value 47
+
+traversing using inorder (non-recursive) from root node
+12 21 34 41 44 49 50 52 55 56 58 60 62 65 67 69 72 79 82 84 85 89 92 95 97 99 100 105 
+
+there are now 28 nodes
+
+
+encountered user termination request 'Q'
+
+deallocated remaining 28 nodes
+
