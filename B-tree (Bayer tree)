@@ -1,0 +1,924 @@
+/* README, followed by C language program, followed by output data */
+
+The program reads a comma or blank separated list of integer-valued keys from the input file (inputFile.txt)
+and creates a Bayer tree or "B-tree" from the input data.
+
+All output data goes to the output file (outputFile.txt).
+
+After all the input data is processed and the specified outputs are produced, the program dumps all of the B-tree data,
+node by node, starting with the root node.
+
+I used a preprocessor declaration of #define NODESIZE 4 to set the maximum number of keys stored at a single node to 4.
+
+I have checked the complete output data for NODESIZE 4, number by number, and I find no errors in the construction
+of the B-tree.
+
+Here are the results from running the program with different values for NODESIZE:
+
+NODESIZE		NODES	KEYS	COMMENTS
+ 0			     -		-			compiles but fails on unterminated loop
+ 1				   78		30		generates 48 nodes without any key values
+ 2			   	 26		30		generates a few nodes without any key values
+ 3				   14		30		from this point on, no nodes are generated without at least 1 key value
+ 4				   12		30
+ 5				   10		30
+ 6			 	    7		30
+ 7				    7		30
+ 8				    6		30
+ 9				    6		30
+10				    5		30
+17			      4		30
+30				    1		30
+44				    1		30
+
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: BTrees                                                 */
+/*                                                                            */
+/*              Filename: BTrees.c                                            */
+/*                                                                            */
+/*              Date: March 31, 2014                                          */
+/*                                                                            */
+/*              Objective:                                                    */
+/*                                                                            */
+/*              Bayer tree (B-Tree) data structure and traversal algorithms   */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+
+// input and output files are global
+FILE *inputFile, *outputFile;
+
+// more preprocessor directives
+#define LOG_TO_OUTPUT_FILE true		// write output data to console and to output data file
+#define CONSOLE_ONLY false			// write output data to console only
+#define EXIT_WITH_ERROR_STATUS -1	// exit status assigned to program upon error/abort termination
+#define BUFFERSIZE 1024				// set buffer size to 1024 chars, used for lines (records) from input data file
+#define SINGLESPACE "\n"			// used for formatting output with single-spaced lines
+#define DOUBLESPACE "\n\n"			// used for formatting output with double-spaced lines
+#define STRINGTERMINATOR '\0'		// string data is terminated with the '\0' (null) character
+#define ROOT true					// designates that node passed to function is a binary search tree root node
+#define ISROOT NULL					// root node has no ancestor node (defined as NULL)
+
+// global declaration of BTree data structure
+#define NODESIZE 4					// each node can store up to NODESIZE-many keys
+typedef struct btree {
+	int nKeys;
+	int keyValue[NODESIZE];
+	struct btree *descendantNode[NODESIZE+1];
+	struct btree *ancestorNode;
+	int indexFromAncestorNode;
+} BTree;
+
+// I will maintain a pointer to the root of my single BTree using global scope, in order to simplify some of my code.
+/* subject to future revision */
+BTree *rootNode = NULL;
+
+
+// a FIFO (queue) is used to buffer the inputs before starting the BTree processing
+// this is necessary to achieve the format that I like for the output data
+
+// preprocessor directives for queue implementation
+#define MAXQUEUE 100	// size of FIFO (queue)
+#define INITIALIZEQ -1	// value used to initialize queue.front and queue.back
+
+// global queue declaration, FIFO (queue), each element is an int, stores key values from input file
+typedef struct queue {
+	int front, back;
+	int queueElement[MAXQUEUE];
+} QUEUE;
+
+// prototype function declarations, followed by function definitions
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+bool myStringToInt(int *, char *);
+void * myMalloc(int);
+bool queueIsEmpty(QUEUE *);
+int deQueue(QUEUE *);
+void enQueue(QUEUE *, int);
+void dumpNode(BTree *);
+void dumpAll(BTree *);
+int freeAll(BTree *);
+int countNodes(BTree *);
+int countKeys(BTree *);
+void inorderTraversal(BTree *);
+BTree * findNodeWithKeyValue(BTree *, int);
+BTree * constructNode();
+BTree * splitNode(BTree *);
+void siftUpOperation(BTree *, int, BTree *, BTree *);
+bool leafNode(BTree *);
+void storeNewKeyInLeafNode(BTree *, int);
+void insertKey(int);
+void processInputFile();
+int main(void);
+
+// log exit status and terminate
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+}
+
+// log generic or customized message string to console and to output data file
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString == NULL) {
+		// message is not customized
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		// message includes %s conversion of outputString parameter to add variable information
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// convert string data to integer value
+/* overflow and underflow checks are left for future implementation */
+bool myStringToInt(int *num, char *str) {
+	char *ptr;
+	*num = (int) strtol(str, &ptr, 10);
+	return (*ptr == '\0');
+}
+
+// "wrapper" for dynamic memory allocation function
+/* avoids duplicating error check for fail condition */
+void * myMalloc(int numberOfBytes) {
+	void * p;
+	p = malloc(numberOfBytes);
+	if (p == NULL) {
+		logToConsoleAndOutputFile("unable to allocate dynamic memory\n", NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	return p;	// returns pointer to dynamically allocated memory
+}
+
+// test for queue empty condition
+bool queueIsEmpty(QUEUE *pointerToQueue) {
+	if (pointerToQueue->front == pointerToQueue->back) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+// remove element from front of queue and return it as an int
+int deQueue(QUEUE *pointerToQueue) {
+	if (queueIsEmpty(pointerToQueue)) {
+		fprintf(outputFile, "queue underflow \n");
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	if (pointerToQueue->front == MAXQUEUE-1) {
+		pointerToQueue->front = 0;
+	} else {
+		(pointerToQueue->front)++;
+	}
+	return pointerToQueue->queueElement[pointerToQueue->front];
+}
+
+// add key value (int) as a new element at the back of the queue
+void enQueue(QUEUE *pointerToQueue, int keyValue) {
+	if (pointerToQueue->back == MAXQUEUE-1) {
+		pointerToQueue->back = 0;
+	} else {
+		(pointerToQueue->back)++;
+	}
+	if (pointerToQueue->front == pointerToQueue->back) {
+		fprintf(outputFile, "queue overflow \n");
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	pointerToQueue->queueElement[pointerToQueue->back] = keyValue;
+	return;
+}
+
+// dumps all data associated with a single B-tree node
+void dumpNode(BTree *b) {
+	fprintf(outputFile, "\nnode = %p ancestor = %p indexFromAncestorNode = %d numberOfKeys = %d\n", b, b->ancestorNode, b->indexFromAncestorNode, b->nKeys);
+	for (int i = 0; i < NODESIZE; i++) {
+		fprintf(outputFile, "key[%d] = %d, descendantNode[%d] = %p\n", i, b->keyValue[i], i, b->descendantNode[i]);
+	}
+	fprintf(outputFile, "descendantNode[%d] = %p\n", NODESIZE, b->descendantNode[NODESIZE]);
+
+}
+
+// dumps all B-tree data, node by node, starting with the calling node, and all descendants
+void dumpAll(BTree *b) {
+	if (b == rootNode) {
+		fprintf(outputFile, "\ndump all BTree nodes, starting with root node\n");
+	}
+	if (b == NULL) {
+		return;
+	}
+	dumpNode(b);
+	for (int branch = 0; branch <= b->nKeys; branch++) {
+		dumpAll(b->descendantNode[branch]);
+	}
+}
+
+// deallocates all B-tree data, node by node, starting from the calling node, and all descendants
+// returns the number of nodes that are deallocated
+int freeAll(BTree *b) {
+	int countFree = 0;
+	if (b == NULL) {
+		return 0;
+	}
+	if (b->nKeys < 1 || b->nKeys > NODESIZE) {
+		char formattedNodeAddress[BUFFERSIZE];
+		sprintf(formattedNodeAddress, "node = %p", b);
+		logToConsoleAndOutputFile("unexpected value, logic fails, freeAll, %s\n", formattedNodeAddress);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	for (int branch = 0; branch < b->nKeys; branch++) {
+		countFree = countFree + freeAll(b->descendantNode[branch]);
+	}
+	countFree = countFree + freeAll(b->descendantNode[b->nKeys]);
+	free(b);
+	countFree++;
+	return countFree;
+}
+
+// returns count of nodes, starting with the calling node, and all descendants
+int countNodes(BTree *b) {
+	int count = 0;
+	if (b == NULL) {
+		return 0;
+	}
+	for (int i = 0; i < b->nKeys; i++) {
+		count = count + countNodes(b->descendantNode[i]);
+	}
+	count = count + countNodes(b->descendantNode[b->nKeys]);
+	count++;
+	return count;
+}
+
+
+// returns count of keys stored in B-tree, starting with the calling node, and all descendants
+int countKeys(BTree *b) {
+	int count = 0;
+	if (b == NULL) {
+		return 0;
+	}
+	for (int i = 0; i < b->nKeys; i++) {
+		count = count + countKeys(b->descendantNode[i]);
+	}
+	count = count + countKeys(b->descendantNode[b->nKeys]);
+	 count = count + b->nKeys;
+	 return count;
+}
+
+// inorder traversal of B-tree, starting with the calling node
+// prints key values in order encountered to output file
+void inorderTraversal(BTree *b) {
+	if (b == rootNode) {
+		fprintf(outputFile, "\tinorder traversal -> ");
+	}
+	if (b == NULL) {
+		return;
+	}
+	for (int branch = 0; branch < b->nKeys; branch++) {
+		inorderTraversal(b->descendantNode[branch]);
+		fprintf(outputFile, "%d ", b->keyValue[branch]);
+	}
+	inorderTraversal(b->descendantNode[b->nKeys]);
+}
+
+// returns pointer to node that contains calling key value
+// or returns NULL if key value has not been stored
+BTree * findNodeWithKeyValue(BTree *b, int searchKeyValue) {
+	char findKeyMessage[BUFFERSIZE];
+	if (b == NULL) {
+		return NULL;
+	}
+	for (int i = 0; i < b->nKeys; i++) {
+		if (searchKeyValue < b->keyValue[i]) {
+			return findNodeWithKeyValue(b->descendantNode[i], searchKeyValue);
+		}
+		if (searchKeyValue == b->keyValue[i]) {
+			sprintf(findKeyMessage, "search encounters key value %d at node %p\n", searchKeyValue, b);
+			logToConsoleAndOutputFile(findKeyMessage, NULL);
+			return b;
+		}
+	}
+	return findNodeWithKeyValue(b->descendantNode[b->nKeys], searchKeyValue);
+}
+
+// returns pointer to a newly allocated node set to initialized state, without any significant values
+BTree * constructNode() {
+	BTree *newNode = NULL;
+	newNode = myMalloc(sizeof(BTree));
+	newNode->nKeys = 0;
+	newNode->ancestorNode = NULL;
+	for (int i = 0; i < NODESIZE; i++) {
+		newNode->keyValue[i] = INT_MAX;
+		newNode->descendantNode[i] = NULL;
+	}
+	newNode->descendantNode[NODESIZE] = NULL;
+	return newNode;
+}
+
+// splits calling node and returns pointer to newly allocated sibling with split-off values removed from calling node;
+// the key value that is selected to split the node is sifted back up the tree to the calling node's ancestor node;
+// the key value is selected by indexing with NODESIZE/2, NODESIZE has been declared as the maximum number of keys
+// that are stored at a single node
+BTree * splitNode(BTree *callingNode) {
+	// this is the index of the key that is used to split the calling node
+	int selectedKeyIndex = NODESIZE/2;
+	// initialize count for keys that are moved to new sibling node
+	int nKeysForNewNode = 0;
+	// allocate new node as sibling of calling node (descendant of calling node's ancestor node)
+	BTree *newNode = constructNode(), *descendantOfNewNode;
+	newNode->ancestorNode = callingNode->ancestorNode;
+	// copy keys that are after the split to the new sibling node and
+	// copy the links to link the new node to all of its descendants
+	for (int copy = selectedKeyIndex + 1; copy < NODESIZE; copy++) {
+		newNode->keyValue[nKeysForNewNode] = callingNode->keyValue[copy];
+		newNode->descendantNode[nKeysForNewNode] = callingNode->descendantNode[copy];
+		nKeysForNewNode++;
+	}
+	// one more copy for the final link
+	newNode->descendantNode[nKeysForNewNode] = callingNode->descendantNode[NODESIZE];
+	// set the new node to reflect the number of keys that were split-off from the calling node
+	newNode->nKeys = nKeysForNewNode;
+	for (int i = 0; i <= nKeysForNewNode; i++) {
+		descendantOfNewNode = newNode->descendantNode[i];
+		if (descendantOfNewNode != NULL) {
+			descendantOfNewNode->ancestorNode = newNode;
+			descendantOfNewNode->indexFromAncestorNode = i;
+		}
+	}
+	// set the calling node to reflect the number of keys that were not removed
+	callingNode->nKeys = NODESIZE - newNode->nKeys - 1;
+	// write data to output file
+	char splitNodeMessage[BUFFERSIZE];
+	sprintf(splitNodeMessage, "\tnode %p splits, creating new node %p\n", callingNode, newNode);
+	logToConsoleAndOutputFile(splitNodeMessage, NULL);
+	// the key that was used to split the calling node is sifted back up the tree
+	// using the link from the calling node back to its immediate ancestor node
+	siftUpOperation(callingNode->ancestorNode, callingNode->keyValue[selectedKeyIndex], newNode, callingNode);
+	return newNode;
+}
+
+// visits node with key value that has to sift back up the tree
+// if there is an empty slot, the key is stored here; otherwise this node is split, and propagates another
+// key value that has to sift farther back up the tree, by visiting this node's ancestor
+void siftUpOperation(BTree *node, int siftKeyValue, BTree *newSiblingOfNodeThatWasSplit, BTree *nodeThatWasSplit) {
+	// declare local variables
+	int indexOfSiftKey, shift; BTree *reindex;
+	// root node was split, key that has to sift up is stored in a newly allocated node that becomes the new root node
+	if (node == NULL) {
+		node = constructNode();
+		rootNode = node;
+	}
+	// error check
+	if (node->nKeys > NODESIZE) {
+		logToConsoleAndOutputFile("unexpected value, logic fails, siftUpOperation\n", NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	if (node->nKeys == NODESIZE) {
+		// node has no empty slot to store key value
+		// determine which key value is used to split this node
+		int nextKeyThatSiftsUp = node->keyValue[NODESIZE/2];
+		// create new sibling by splitting this node
+		// the key that was used to split this node sifts back up the tree, visit this node's ancestor node
+		// this is recursive, because splitNode calls this function before it returns
+		BTree *newSibling = splitNode(node);
+		// the key value that was an input parameter to this function is either stored in this node or
+		// stored in its new sibling
+		if (siftKeyValue > nextKeyThatSiftsUp) {
+			// store in new sibling
+			node = newSibling;
+		}
+	}
+	// node has one or more empty slots, find the slot where key needs to go, observing ascending numerical order
+	for (indexOfSiftKey = 0; indexOfSiftKey < node->nKeys; indexOfSiftKey++) {
+		if (siftKeyValue < node->keyValue[indexOfSiftKey]) {
+			break;
+		}
+		// error check
+		if (siftKeyValue == node->keyValue[indexOfSiftKey]) {
+			logToConsoleAndOutputFile("duplicate key value, logic fails, siftUpOperation\n", NULL);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+	} // key is stored in the correct slot using index value assigned to "indexOfSiftKey"
+	// if slot is already occupied, keys must be shifted towards the end of the array to vacate slot before storing key
+	for (shift = node->nKeys; shift > indexOfSiftKey; shift--) {
+		node->keyValue[shift]= node->keyValue[shift-1];
+		// links to descendant nodes are shifted in lockstep with the keys that are shifted
+		node->descendantNode[shift+1] = node->descendantNode[shift];
+		node->descendantNode[shift] = node->descendantNode[shift-1];
+	}
+	// store key value that needs to sift up the tree
+	node->keyValue[indexOfSiftKey] = siftKeyValue;
+	// update number of keys at this node
+	node->nKeys++;
+	// link key that sifted up to the node that was split and its new sibling node
+	node->descendantNode[indexOfSiftKey] = nodeThatWasSplit;
+	nodeThatWasSplit->ancestorNode = node;
+	node->descendantNode[indexOfSiftKey + 1] = newSiblingOfNodeThatWasSplit;
+	newSiblingOfNodeThatWasSplit->ancestorNode = node;
+	for (shift = 0; shift <= node->nKeys; shift++) {
+		// error check
+		if (node->descendantNode[shift] == NULL) {
+			logToConsoleAndOutputFile("encountered null pointer, logic fails, siftUpOperation\n", NULL);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+		// update descendants of this node
+		reindex = node->descendantNode[shift];
+		reindex->indexFromAncestorNode = shift;
+	}
+	// write data to output file to reflect new structure of tree
+	char siftUpMessage[BUFFERSIZE];
+	sprintf(siftUpMessage, "\nkey value %d sifts up to node %p\n", siftKeyValue, node);
+	logToConsoleAndOutputFile(siftUpMessage, NULL);
+	fprintf(outputFile, "\nThere are %d nodes and %d keys\n", countNodes(rootNode), countKeys(rootNode));
+	inorderTraversal(rootNode); fprintf(outputFile, SINGLESPACE);
+}
+
+// returns true if calling node is a leaf node (has no descendants)
+bool leafNode(BTree *node) {
+	// only need to test one slot (use the first slot), because of the way that tree expands from leaf nodes upwards
+	if (node->descendantNode[0] != NULL) {
+		return false;
+	}
+	return true;
+}
+
+
+// new key values are always stored in a leaf node
+void storeNewKeyInLeafNode(BTree *node, int keyValue) {
+	// declare local variables
+	int indexOfKey,findBranch; char formattedNodeAddress[BUFFERSIZE];
+	// test for error conditions
+	if (node == NULL || node->nKeys < 0 || node->nKeys > NODESIZE) {
+		sprintf(formattedNodeAddress, "node = %p", node);
+		logToConsoleAndOutputFile("unexpected value, logic fails, storeNewKeyInLeafNode, %s\n", formattedNodeAddress);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	if (leafNode(node)) {
+		// test for error condition
+		if (node != rootNode && node->nKeys == 0) {
+			sprintf(formattedNodeAddress, "node = %p", node);
+			logToConsoleAndOutputFile("leaf node that is not root node must have at least one key, storeNewKeyInLeafNode, %s\n", formattedNodeAddress);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+		if (node->nKeys < NODESIZE) {
+			// leaf node has empty slot(s), find index to store new key
+			for (indexOfKey = 0; indexOfKey < node->nKeys; indexOfKey++) {
+				if (keyValue < node->keyValue[indexOfKey]) {
+					break;
+				}
+				if (keyValue == node->keyValue[indexOfKey]) {
+					logToConsoleAndOutputFile("duplicate key value, logic fails, storeNewKeyInLeafNode\n", NULL);
+					myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+				}
+			}
+			// if slot is already occupied, keys must be shifted towards the end of the array to vacate slot before storing key
+			for (int shift = node->nKeys; shift > indexOfKey; shift--) {
+				node->keyValue[shift]= node->keyValue[shift-1];
+			}
+			// store key in correct slot, respecting ascending numerical order
+			node->keyValue[indexOfKey] = keyValue;
+			// update number of keys at this node and return
+			node->nKeys++;
+			return;
+		}
+		// leaf node has no empty slot, create new sibling of leaf node by splitting
+		// after splitting, both leaf node and its new sibling (also a leaf node) have one/more empty slots
+		splitNode(node);
+		// new key is stored in leaf node or its new sibling, using recursion
+		// visit immediate ancestor node and use key value to navigate to (this) leaf node or its new sibling
+		storeNewKeyInLeafNode(node->ancestorNode, keyValue);
+		// write data to output file after splitting a leaf node to vacate a slot and storing the new key
+		fprintf(outputFile, "\nAfter propagating splits as far back up the tree as necessary and inserting the key (%d) that caused the split(s)\n", keyValue);
+		fprintf(outputFile, "there are %d nodes and %d keys\n", countNodes(rootNode), countKeys(rootNode));
+		inorderTraversal(rootNode); fprintf(outputFile, SINGLESPACE);
+		// new key has been stored in tree, return
+		return;
+	}
+	// descend tree, using value of new key to navigate
+	for (findBranch = 0; findBranch < node->nKeys; findBranch++) {
+		if (keyValue == node->keyValue[findBranch]) {
+			logToConsoleAndOutputFile("duplicate key value, logic fails #2, storeNewKeyInLeafNode\n", NULL);
+			myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+		}
+		if (keyValue < node->keyValue[findBranch]) {
+			break;
+		}
+	}
+	// navigating tree using recursion
+	storeNewKeyInLeafNode(node->descendantNode[findBranch], keyValue);
+}
+
+// find vacant slot for new key by navigating B-tree, starting at root node
+void insertKey(int keyValue) {
+	// test if key has already been stored
+	if (findNodeWithKeyValue(rootNode, keyValue) != NULL) {
+		logToConsoleAndOutputFile("key was already stored, this call does not update tree\n", NULL);
+		// return without any update to tree
+		return;
+	}
+	if (rootNode == NULL) {
+		// encountered first key: initialize B-tree by creating a root node
+		rootNode = constructNode();
+	}
+	// ready to navigate tree, starting at root node
+	storeNewKeyInLeafNode(rootNode, keyValue);
+}
+
+// all processing of input data from input data file (inputFile.txt)
+/* find all key values from input data and generate the complete BTree */
+void processInputFile() {
+	// initialize the queue where inputs are stored to "empty"
+	QUEUE q, *pointerToQueue;
+	q.front = q.back = INITIALIZEQ;
+	pointerToQueue = &q;
+	// other local declarations needed for processing
+	char fileRecord[BUFFERSIZE];					// buffer for input record from file
+	const char *record = fileRecord;				// declarations for string processing
+	char *stringFromInputFile;						// declarations for string processing
+	int keyValue;									// int format key value converted from string
+	// more local declarations, string constants used for messaging to output data file and to console
+	const char * const inputFileOpenMsg = "inputFile.txt opened for read access\nreading and processing input data\n\n";
+	const char * const inputFileOpenErrorMsg = "inputFile.txt could not be opened with read access\n";
+	const char * const inputFileErrorOnRead = "file error on inputFile.txt\n";
+	const char * const inputFileUnexpectedData = "encountered unexpected data from inputFile.txt\n";
+	const char * const inputFileEOF = "\n\nencountered EOF from inputFile.txt\n";
+	const char * const inputFileCloseMessage = "\ninputFile.txt was closed without error\n";
+	const char * const inputFileCloseErrorMessage = "file close error on inputFile.txt\n";
+
+	// open file for reading input data
+	if ((inputFile = fopen("inputFile.txt", "r"))==NULL) {
+		// file error, abort program
+		logToConsoleAndOutputFile(inputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	logToConsoleAndOutputFile(inputFileOpenMsg, NULL);
+	// loop to process lines (records) from input file
+	while (!feof(inputFile)) {
+		record = fgets(fileRecord, BUFFERSIZE, inputFile);	// read record from input file into buffer "fileRecord"
+		if (record == NULL) {
+			// encountered EOF or error on file read, break out of loop
+			break;
+
+		}
+		// write each record (line) from input file to output file
+		logToConsoleAndOutputFile(record, NULL);
+		// initialize parsing of input record
+		stringFromInputFile = strtok(fileRecord, " ,\n");
+		// loop to parse line (record) of input data into one or more comma or blank separated strings
+		while (stringFromInputFile != NULL) {
+			// string is expected to conform to integer format
+			if (myStringToInt(&keyValue, stringFromInputFile)) {
+				// string conforms, store int-formatted value in FIFO (queue)
+				enQueue(pointerToQueue, keyValue);
+			} else {
+				// string does not conform, abort program
+				logToConsoleAndOutputFile("\nparsed unexpected string data \"%s\" from inputFile.txt\n", stringFromInputFile);
+				myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+			}
+			stringFromInputFile = strtok(NULL, " ,\n");
+		} // ends processing of single line (record) from input file
+	} // ends processing of data from input file
+
+	if (feof(inputFile)) {
+		// encountered EOF from input file
+		logToConsoleAndOutputFile(inputFileEOF, NULL);
+	} else if (ferror(inputFile)) {
+		// input file processing error, abort program
+		logToConsoleAndOutputFile(inputFileErrorOnRead, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else if (record == NULL) {
+		// "fgets" did not return valid record from input file, abort program
+		logToConsoleAndOutputFile(inputFileUnexpectedData, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	// clean up by closing input file and logging file status
+	if (fclose(inputFile) != 0) {
+		// error, abort program
+		logToConsoleAndOutputFile(inputFileCloseErrorMessage, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else {
+		logToConsoleAndOutputFile(inputFileCloseMessage, NULL);
+	}
+	// generate B-tree by processing key values from queue
+	// key values are processed in same order as encountered when reading data from input file
+	while(!queueIsEmpty(pointerToQueue)) {
+		keyValue = deQueue(pointerToQueue);
+		fprintf(outputFile, "\nprocessing key from input data -> %d\n", keyValue);
+		insertKey(keyValue);
+	}
+	return;
+}
+
+// function main begins dynamic program execution
+int main(void) {
+	// string constants used for messaging to output file and to console
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+	// dynamic execution begins here, start by opening output file
+	if ((outputFile  = fopen("outputFile.txt", "w")) == NULL) {
+		// abort on file error
+		printf (outputFileOpenErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	}
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+	// call function to read and process all data from input file
+	processInputFile();
+	// dump all data associated with B-tree to output file
+	dumpAll(rootNode);
+	// deallocate all nodes of BTree, from root node down
+	fprintf(outputFile, "\ndeallocated all %d nodes\n\n", freeAll(rootNode));
+	// close output file and log file status to console
+	if (fclose(outputFile) != 0) {
+		printf("%s", outputFileCloseErrorMsg);
+		myExit(EXIT_WITH_ERROR_STATUS, CONSOLE_ONLY);
+
+	} else {
+		printf("%s", outputFileCloseMsg);
+	}
+	// log program termination to console and exit
+	myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+
+}
+
+
+outputFile.txt opened for write access
+inputFile.txt opened for read access
+reading and processing input data
+
+572, 430, 315, 363, 320, 545, 451, 437, 476, 472,
+493, 395, 462, 521, 406, 412, 510, 560, 425,
+595, 580, 583, 531, 511, 459, 518, 356, 379,
+488, 532 
+
+encountered EOF from inputFile.txt
+
+inputFile.txt was closed without error
+
+processing key from input data -> 572
+
+processing key from input data -> 430
+
+processing key from input data -> 315
+
+processing key from input data -> 363
+
+processing key from input data -> 320
+	node 0x7facc9c03820 splits, creating new node 0x7facc9c03870
+
+key value 430 sifts up to node 0x7facc9c038c0
+
+There are 3 nodes and 4 keys
+	inorder traversal -> 315 363 430 572 
+
+After propagating splits as far back up the tree as necessary and inserting the key (320) that caused the split(s)
+there are 3 nodes and 5 keys
+	inorder traversal -> 315 320 363 430 572 
+
+processing key from input data -> 545
+
+processing key from input data -> 451
+
+processing key from input data -> 437
+
+processing key from input data -> 476
+	node 0x7facc9c03870 splits, creating new node 0x7facc9c03910
+
+key value 545 sifts up to node 0x7facc9c038c0
+
+There are 4 nodes and 8 keys
+	inorder traversal -> 315 320 363 430 437 451 545 572 
+
+After propagating splits as far back up the tree as necessary and inserting the key (476) that caused the split(s)
+there are 4 nodes and 9 keys
+	inorder traversal -> 315 320 363 430 437 451 476 545 572 
+
+processing key from input data -> 472
+
+processing key from input data -> 493
+	node 0x7facc9c03870 splits, creating new node 0x7facc9c03960
+
+key value 472 sifts up to node 0x7facc9c038c0
+
+There are 5 nodes and 10 keys
+	inorder traversal -> 315 320 363 430 437 451 472 476 545 572 
+
+After propagating splits as far back up the tree as necessary and inserting the key (493) that caused the split(s)
+there are 5 nodes and 11 keys
+	inorder traversal -> 315 320 363 430 437 451 472 476 493 545 572 
+
+processing key from input data -> 395
+
+processing key from input data -> 462
+
+processing key from input data -> 521
+
+processing key from input data -> 406
+	node 0x7facc9c03820 splits, creating new node 0x7facc9c039b0
+
+key value 363 sifts up to node 0x7facc9c038c0
+
+There are 6 nodes and 14 keys
+	inorder traversal -> 315 320 363 395 430 437 451 462 472 476 493 521 545 572 
+
+After propagating splits as far back up the tree as necessary and inserting the key (406) that caused the split(s)
+there are 6 nodes and 15 keys
+	inorder traversal -> 315 320 363 395 406 430 437 451 462 472 476 493 521 545 572 
+
+processing key from input data -> 412
+
+processing key from input data -> 510
+
+processing key from input data -> 560
+
+processing key from input data -> 425
+
+processing key from input data -> 595
+
+processing key from input data -> 580
+
+processing key from input data -> 583
+	node 0x7facc9c03910 splits, creating new node 0x7facc9c03a00
+	node 0x7facc9c038c0 splits, creating new node 0x7facc9c03a50
+
+key value 472 sifts up to node 0x7facc9c03aa0
+
+There are 8 nodes and 19 keys
+	inorder traversal -> 315 320 363 395 406 412 425 430 437 451 462 472 476 493 510 521 545 560 572 
+
+key value 580 sifts up to node 0x7facc9c03a50
+
+There are 9 nodes and 21 keys
+	inorder traversal -> 315 320 363 395 406 412 425 430 437 451 462 472 476 493 510 521 545 560 572 580 595 
+
+After propagating splits as far back up the tree as necessary and inserting the key (583) that caused the split(s)
+there are 9 nodes and 22 keys
+	inorder traversal -> 315 320 363 395 406 412 425 430 437 451 462 472 476 493 510 521 545 560 572 580 583 595 
+
+processing key from input data -> 531
+	node 0x7facc9c03960 splits, creating new node 0x7facc9c03af0
+
+key value 510 sifts up to node 0x7facc9c03a50
+
+There are 10 nodes and 22 keys
+	inorder traversal -> 315 320 363 395 406 412 425 430 437 451 462 472 476 493 510 521 545 560 572 580 583 595 
+
+After propagating splits as far back up the tree as necessary and inserting the key (531) that caused the split(s)
+there are 10 nodes and 23 keys
+	inorder traversal -> 315 320 363 395 406 412 425 430 437 451 462 472 476 493 510 521 531 545 560 572 580 583 595 
+
+processing key from input data -> 511
+
+processing key from input data -> 459
+
+processing key from input data -> 518
+
+processing key from input data -> 356
+
+processing key from input data -> 379
+	node 0x7facc9c039b0 splits, creating new node 0x7facc9d00000
+
+key value 412 sifts up to node 0x7facc9c038c0
+
+There are 11 nodes and 27 keys
+	inorder traversal -> 315 320 356 363 395 406 412 425 430 437 451 459 462 472 476 493 510 511 518 521 531 545 560 572 580 583 595 
+
+After propagating splits as far back up the tree as necessary and inserting the key (379) that caused the split(s)
+there are 11 nodes and 28 keys
+	inorder traversal -> 315 320 356 363 379 395 406 412 425 430 437 451 459 462 472 476 493 510 511 518 521 531 545 560 572 580 583 595 
+
+processing key from input data -> 488
+
+processing key from input data -> 532
+	node 0x7facc9c03af0 splits, creating new node 0x7facc9d00050
+
+key value 521 sifts up to node 0x7facc9c03a50
+
+There are 12 nodes and 29 keys
+	inorder traversal -> 315 320 356 363 379 395 406 412 425 430 437 451 459 462 472 476 488 493 510 511 518 521 531 545 560 572 580 583 595 
+
+After propagating splits as far back up the tree as necessary and inserting the key (532) that caused the split(s)
+there are 12 nodes and 30 keys
+	inorder traversal -> 315 320 356 363 379 395 406 412 425 430 437 451 459 462 472 476 488 493 510 511 518 521 531 532 545 560 572 580 583 595 
+
+dump all BTree nodes, starting with root node
+
+node = 0x7facc9c03aa0 ancestor = 0x0 indexFromAncestorNode = 0 numberOfKeys = 1
+key[0] = 472, descendantNode[0] = 0x7facc9c038c0
+key[1] = 2147483647, descendantNode[1] = 0x7facc9c03a50
+key[2] = 2147483647, descendantNode[2] = 0x0
+key[3] = 2147483647, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c038c0 ancestor = 0x7facc9c03aa0 indexFromAncestorNode = 0 numberOfKeys = 3
+key[0] = 363, descendantNode[0] = 0x7facc9c03820
+key[1] = 412, descendantNode[1] = 0x7facc9c039b0
+key[2] = 430, descendantNode[2] = 0x7facc9d00000
+key[3] = 545, descendantNode[3] = 0x7facc9c03870
+descendantNode[4] = 0x7facc9c03910
+
+node = 0x7facc9c03820 ancestor = 0x7facc9c038c0 indexFromAncestorNode = 0 numberOfKeys = 3
+key[0] = 315, descendantNode[0] = 0x0
+key[1] = 320, descendantNode[1] = 0x0
+key[2] = 356, descendantNode[2] = 0x0
+key[3] = 395, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c039b0 ancestor = 0x7facc9c038c0 indexFromAncestorNode = 1 numberOfKeys = 3
+key[0] = 379, descendantNode[0] = 0x0
+key[1] = 395, descendantNode[1] = 0x0
+key[2] = 406, descendantNode[2] = 0x0
+key[3] = 425, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9d00000 ancestor = 0x7facc9c038c0 indexFromAncestorNode = 2 numberOfKeys = 1
+key[0] = 425, descendantNode[0] = 0x0
+key[1] = 2147483647, descendantNode[1] = 0x0
+key[2] = 2147483647, descendantNode[2] = 0x0
+key[3] = 2147483647, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c03870 ancestor = 0x7facc9c038c0 indexFromAncestorNode = 3 numberOfKeys = 4
+key[0] = 437, descendantNode[0] = 0x0
+key[1] = 451, descendantNode[1] = 0x0
+key[2] = 459, descendantNode[2] = 0x0
+key[3] = 462, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c03a50 ancestor = 0x7facc9c03aa0 indexFromAncestorNode = 1 numberOfKeys = 4
+key[0] = 510, descendantNode[0] = 0x7facc9c03960
+key[1] = 521, descendantNode[1] = 0x7facc9c03af0
+key[2] = 545, descendantNode[2] = 0x7facc9d00050
+key[3] = 580, descendantNode[3] = 0x7facc9c03910
+descendantNode[4] = 0x7facc9c03a00
+
+node = 0x7facc9c03960 ancestor = 0x7facc9c03a50 indexFromAncestorNode = 0 numberOfKeys = 3
+key[0] = 476, descendantNode[0] = 0x0
+key[1] = 488, descendantNode[1] = 0x0
+key[2] = 493, descendantNode[2] = 0x0
+key[3] = 521, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c03af0 ancestor = 0x7facc9c03a50 indexFromAncestorNode = 1 numberOfKeys = 2
+key[0] = 511, descendantNode[0] = 0x0
+key[1] = 518, descendantNode[1] = 0x0
+key[2] = 521, descendantNode[2] = 0x0
+key[3] = 531, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9d00050 ancestor = 0x7facc9c03a50 indexFromAncestorNode = 2 numberOfKeys = 2
+key[0] = 531, descendantNode[0] = 0x0
+key[1] = 532, descendantNode[1] = 0x0
+key[2] = 2147483647, descendantNode[2] = 0x0
+key[3] = 2147483647, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c03910 ancestor = 0x7facc9c03a50 indexFromAncestorNode = 3 numberOfKeys = 2
+key[0] = 560, descendantNode[0] = 0x0
+key[1] = 572, descendantNode[1] = 0x0
+key[2] = 580, descendantNode[2] = 0x0
+key[3] = 595, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+node = 0x7facc9c03a00 ancestor = 0x7facc9c03a50 indexFromAncestorNode = 4 numberOfKeys = 2
+key[0] = 583, descendantNode[0] = 0x0
+key[1] = 595, descendantNode[1] = 0x0
+key[2] = 2147483647, descendantNode[2] = 0x0
+key[3] = 2147483647, descendantNode[3] = 0x0
+descendantNode[4] = 0x0
+
+deallocated all 12 nodes
+
