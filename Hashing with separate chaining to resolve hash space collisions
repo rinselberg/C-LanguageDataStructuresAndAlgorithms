@@ -1,0 +1,461 @@
+README.txt, followed by C program, follwed by ouput data
+
+
+There is no input file. This is because the program generates its own randomized data. I could have made it
+a two-step process, writing the randomized data to a file and then reading it back in again (thus, an input file),
+but I did not think that would add anything of interest or use to the assignment.
+
+The program creates 100 data records. The only data for each record is a string of randomly selected characters, 
+excluding the space character (that would make the output data harder to read). I have a preprocessor directive to set  
+the string length, and I set that to 4, so the strings are of 4 randomly selected characters. The randomized strings are
+used as the hash keys or inputs to the hashing function, and the strings are the only data that is stored using the 
+hash table with separate chaining for collision resolution algorithm.
+
+The hashing is a two-step process. The first step takes the data string as input and uses a variant of the FNV hashing
+algorithm. I found a C language implementation of this and modified it slightly to use for myself. (I would include the
+address of the web page where I found the code, but I have lost track of that.)
+
+The FNV algorithm (as it is implemented) produces a very large ("gi-normous") hash space. I have the FNV hash codes in
+my output file, under the column heading of "raw hash value". The second step is to reduce this large FNV hash space 
+using the modulo division (%) operator, so HashTableIndex <- FNVHashCode % HASHTABLESIZE, where I have used a 
+preprocessor directive to set the hash table size to 15 (as was specified for this project).
+
+I included a test to demonstrate that the program rejects any data that duplicates data that has already
+been hashed and stored.
+
+After this test, the program dumps all of the data that was stored, in a format that shows how the data was hashed using
+separate chaining (implemented as a unidirectional linked list) to resolve hash space collisions.
+
+I modified some C language code that I discovered on the Internet for the function that creates the random character strings. This is
+where I found that using Google:
+
+http://codereview.stackexchange.com/questions/29198/random-string-generator-in-c
+
+
+/******************************************************************************/
+/******************************* prologue *************************************/
+/*                                                                            */
+/*              Author: Ronald Inselberg                                      */
+/*                                                                            */
+/*              Topic: Hashing                                                */
+/*                                                                            */
+/*              Filename: Hashing.c                                           */
+/*                                                                            */
+/*              Date: April 18, 2014                                          */
+/*                                                                            */
+/*              Objective:                                                    */
+/*                                                                            */
+/*              Hash w. separate chaining to resolve hash space collisions    */
+/*                                                                            */
+/*              Comments:                                                     */
+/*                                                                            */
+/******************************************************************************/
+
+// include files
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+
+// output file is global
+FILE *outputFile;
+
+// more preprocessor directives
+#define LOG_TO_OUTPUT_FILE true		// write output data to console and to output data file
+#define CONSOLE_ONLY false			// write output data to console only
+#define EXIT_WITH_ERROR_STATUS -1	// exit status assigned to program upon error/abort termination
+#define SINGLESPACE "\n"			// used for formatting output with single-spaced lines
+#define DOUBLESPACE "\n\n"			// used for formatting output with double-spaced lines
+#define STRINGTERMINATOR '\0'		// string data is terminated with the '\0' (null) character
+
+// parameters that can be redefined
+#define STRINGLENGTH 4
+#define NUMBEROFDATAINPUTS 100
+#define HASHTABLESIZE 15
+
+// declare the unidirectional list structure that stores the data (strings)
+typedef struct dataElement {
+	char dString[STRINGLENGTH + 1];
+	struct dataElement *dLink;
+} DATAELEMENT;
+
+// declare the hash table as a global
+DATAELEMENT *hashTable[HASHTABLESIZE];
+
+// prototype function declarations, followed by function definitions
+void myExit(int, bool);
+void logToConsoleAndOutputFile(char *, char *);
+void * myMalloc(int);
+void randomString(char *, int);
+unsigned int FNVHash(char *);
+void duplicateData(char *, int, int);
+int storeUsingHashTable(char *);
+int dumpAndDeallocateAllDataStoredUsingHashTable();
+int main(void);
+
+// log exit status and terminate
+void myExit(int exitStatus, bool logToOutputFile) {
+	const char * const programTerminationMsg = "terminating with exit status %i\n";
+	printf(programTerminationMsg, exitStatus);
+	if (logToOutputFile) {
+		fprintf(outputFile, programTerminationMsg, exitStatus);
+	}
+	exit(exitStatus);
+}
+
+// log generic or customized message string to console and to output data file
+void logToConsoleAndOutputFile(char *msgString, char *outputString) {
+	if (outputString == NULL) {
+		// message is not customized
+		printf(msgString);
+		fprintf(outputFile, msgString);
+	} else {
+		// message includes %s conversion of outputString parameter to add variable information
+		printf(msgString, outputString);
+		fprintf(outputFile, msgString, outputString);
+	}
+}
+
+// "wrapper" for dynamic memory allocation function
+/* avoids duplicating error check for fail condition */
+void * myMalloc(int numberOfBytes) {
+	void * p;
+	p = malloc(numberOfBytes);
+	if (p == NULL) {
+		logToConsoleAndOutputFile("unable to allocate dynamic memory\n", NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	return p;	// returns pointer to dynamically allocated memory
+}
+
+// generates a string of randomly selected characters
+void randomString(char *rString, int length) {
+	static const char characterSet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,.-#'?!";
+	int integerEquivalentOf_length = (int) (sizeof characterSet - 1);
+	for (int n = 0; n < length; n++) {
+		int key = rand() % integerEquivalentOf_length;          // per-iteration instantiation
+		rString[n] = characterSet[key];
+	}
+	rString[length] = '\0';
+}
+
+// FNV hashing algorithm, hashes string data using very large hash space
+unsigned int FNVHash(char* str) {
+   const unsigned int fnv_prime = 0x811C9DC5;
+   unsigned int hash      = 0;
+   unsigned int len = strlen(str);
+   unsigned int i         = 0;
+   for (i = 0; i < len; str++, i++) {
+      hash *= fnv_prime;
+      hash ^= (*str);
+   }
+   return hash;
+}
+/* End Of FNV Hash Function */
+
+// code refactoring, called from storeUsingHashTable
+void duplicateData(char *data, int hashIndex, int chainIndex) {
+	fprintf(outputFile, "duplicate data, data = %s, hashIndex = %02d, chainIndex = %d\n", data, hashIndex, chainIndex);
+}
+
+/*
+ * Stores string data in hash table, using separate chaining (unidirectional linked list) to
+ * resolve hash space collisions.
+ */
+int storeUsingHashTable(char *dataToStore) {
+	// maintain count of data (strings) that are stored
+	static int nodes = 0;
+	// hash into very large hash space using FNV algorithm
+	unsigned int hashIndexRaw = FNVHash(dataToStore);
+	// reduce very large FNV hash space to preprocessor defined size for hash table using modulo division (%)
+	int hashIndex = hashIndexRaw % HASHTABLESIZE;
+	// index into hash table
+	DATAELEMENT *pointer = hashTable[hashIndex];
+	// chain is the pointer that keeps track as I traverse the unidirectional linked list structure
+	DATAELEMENT *chain;
+	// keep track of number of links in the list
+	int chainIndex = 0;
+	// search until end of list
+	while (pointer != NULL) {
+		if (strcmp(pointer->dString, dataToStore) == 0) {
+			// data already stored, dump to output file and return
+			duplicateData(dataToStore, hashIndex, chainIndex);
+			// count is not incremented
+			return nodes;
+
+		}
+		// continue search for end of list
+		chain = pointer;
+		pointer = pointer->dLink;
+		chainIndex++;
+	}
+	// dynamic allocation of new list element to create space for new data
+	pointer = (DATAELEMENT *) myMalloc(sizeof(DATAELEMENT));
+	if (chainIndex == 0) {
+		// special case when new list element is head of list
+		hashTable[hashIndex] = pointer;
+	} else {
+		// new list element is new end of list, but not end of list
+		chain->dLink = pointer;
+	}
+	// null pointer signnifies end of list
+	pointer->dLink = NULL;
+	// store data in list
+	strcpy(pointer->dString, dataToStore);
+	// maintain count of data (strings) that are stored
+	nodes++;
+	// return count (int format)
+	return nodes;
+}
+
+/*
+ * dump all the data (strings) that were stored by hashing
+ * deallocates the dynamically allocated space as I traverse each list
+ * returns a data count, should be the same as the count from storeUsingHashTable
+ */
+int dumpAndDeallocateAllDataStoredUsingHashTable() {
+	DATAELEMENT *pointer;
+	DATAELEMENT *link;
+	int nodeCount = 0;
+	for (int hashIndex = 0; hashIndex < HASHTABLESIZE; hashIndex++) {
+		pointer = hashTable[hashIndex];
+		fprintf(outputFile, "hash table index %02d", hashIndex);
+		while (pointer != NULL) {
+			fprintf(outputFile, " -> %s", pointer->dString);
+			link = pointer->dLink;
+			free(pointer);
+			pointer = link;
+			nodeCount++;
+		}
+		fprintf(outputFile, "\n");
+	}
+	return nodeCount;
+}
+
+
+int main(void) {
+
+	// set up strings for the predefined output messages
+	const char * const outputFileOpenMsg = "outputFile.txt opened for write access\n";
+	const char * const outputFileOpenErrorMsg = "outputFile.txt could not be opened with write access\n";
+	const char * const outputFileCloseMsg = "outputFile.txt was closed without error\n";
+	const char * const outputFileCloseErrorMsg = "file close error on outputFile.txt\n";
+
+	// local variable declarations
+	char rStringData[STRINGLENGTH + 1];
+	char *rString = rStringData;
+	int hashIndex;
+
+	// open file "outputFile.txt" for writing output data
+	if ((outputFile = fopen("outputFile.txt", "w")) == NULL) {
+		// file error, abort program
+		logToConsoleAndOutputFile(outputFileOpenErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	}
+	logToConsoleAndOutputFile(outputFileOpenMsg, NULL);
+
+	// write column headers for randomized data, used as input for the hashing algorithm
+	fprintf(outputFile, "record#\t\thashKey/data\tFNVHashCode\t\t\tHashTableIndex\n");
+
+	// initialize the hash table to empty (no data has been stored)
+	for (hashIndex = 0; hashIndex < HASHTABLESIZE; hashIndex++) {
+		hashTable[hashIndex] = NULL;
+	}
+
+	/*
+	 * loop over the preprocessor defined number of data elements
+	 * simulates an input data file
+	 */
+	for (int i = 1; i <= NUMBEROFDATAINPUTS; i++) {
+		// generate a randomized character string
+		randomString(rString, STRINGLENGTH);
+		// compute the FNV hash code (only for writing to output file)
+		unsigned int hashIndexRaw = FNVHash(rString);
+		// reduce the FNV hash space to the preprocessor defined hash table size (only for writing to output file)
+		hashIndex = hashIndexRaw % HASHTABLESIZE;
+		// print the simulated input file data record
+		fprintf(outputFile, "%03u\t\t\t%s\t\t\t%010u\t\t\t%02d\n", i, rString, hashIndexRaw, hashIndex);
+		// store the randomized string data using the hashing with separate chaining algorithm
+		storeUsingHashTable(rString);
+	}
+
+	/*
+	 * some tests to verify that string data is rejected if it duplicates data that was already hashed and stored
+	 */
+	storeUsingHashTable("KKVG");
+	storeUsingHashTable("EKJ4");
+	storeUsingHashTable("d?YJ");
+	storeUsingHashTable("AiQ6");
+	storeUsingHashTable("AiQ6");
+	storeUsingHashTable("!5nR");
+	storeUsingHashTable("cF10");
+
+	// final test with duplicated string data, writes number of strings that were stored
+	int numberOfDataElements = storeUsingHashTable("!5nR");
+	fprintf(outputFile, "allocated %d list elements containing data\n", numberOfDataElements);
+
+	// count should match preprocessor defined parameter to verify that all non-duplicated strings were stored
+	if (numberOfDataElements != NUMBEROFDATAINPUTS) {
+		logToConsoleAndOutputFile("there is a programming error (main, #1)\n", NULL);
+	}
+
+	/*
+	 * free all dynamically allocated memory space used for hashing, dumping all data strings from hash table
+	 * as unidirectional linked lists are traversed
+	 *
+	 * returns count that should match the number of data strings that were stored before deallocating
+	 */
+	numberOfDataElements = dumpAndDeallocateAllDataStoredUsingHashTable();
+	fprintf(outputFile, "deallocated %d list elements containing data\n", numberOfDataElements);
+	if (numberOfDataElements != NUMBEROFDATAINPUTS) {
+		logToConsoleAndOutputFile("there is a programming error (main, #2)\n", NULL);
+	}
+
+	// clean up by closing output file and logging file status
+	if (fclose(outputFile) != 0) {
+		// file error, log and abort program
+		logToConsoleAndOutputFile(outputFileCloseErrorMsg, NULL);
+		myExit(EXIT_WITH_ERROR_STATUS, LOG_TO_OUTPUT_FILE);
+
+	} else {
+		// log to console that output file was closed
+		logToConsoleAndOutputFile(outputFileCloseMsg, NULL);
+		/*
+		 * log nominal program termination status to console and exit
+		 */
+		myExit(EXIT_SUCCESS, CONSOLE_ONLY);
+	}
+}
+
+
+outputFile.txt opened for write access
+record#		hashKey/data	FNVHashCode			HashTableIndex
+001			OnY1			1321524497			02
+002			6ivP			1961019161			11
+003			cOKJ			2938026717			12
+004			gi8A			4178847699			09
+005			UtUX			0006202444			04
+006			W0E4			1424036038			13
+007			bZ5g			1197058558			13
+008			13?M			3171934504			04
+009			10Y8			3899913528			03
+010			C3BW			0920269681			01
+011			q4Ld			3829252041			06
+012			#oS?			3418659936			06
+013			d?YJ			3020501484			09
+014			kqIJ			2657072857			07
+015			8!NR			3157099341			06
+016			qLWY			1237509099			09
+017			JzNH			2047334582			02
+018			W9OC			3701644722			12
+019			C6B6			1569825773			08
+020			ABAV			0337888188			03
+021			QIW9			2241032126			11
+022			uo2A			0916014397			07
+023			a58G			2915311567			07
+024			JIv!			3490782388			13
+025			3ZAE			1302022813			13
+026			KKVG			3196148325			00
+027			A,FB			2772854389			04
+028			EKJ4			0027119780			05
+029			lyj#			3853268604			09
+030			6ePx			3838771355			05
+031			5OEh			3077816175			00
+032			IWfw			1409006051			11
+033			ONt3			0912614802			12
+034			0ht5			3224967049			04
+035			8IZl			0409821415			10
+036			PHr8			0060274122			12
+037			0#7n			0796621158			03
+038			,OPz			2350972081			01
+039			TQgA			0422871655			10
+040			zMO5			3443627841			06
+041			a7!u			0342630098			08
+042			BIsV			0076124154			09
+043			bUup			1960402102			07
+044			CT96			0112420096			01
+045			cvbH			4249019027			02
+046			?nfg			1703296940			05
+047			JaqU			3397504243			13
+048			X6Mi			3183335710			10
+049			kvKc			4198141957			07
+050			-4pW			0739237290			00
+051			HCDS			0809201036			11
+052			Kjqi			1910038665			00
+053			iz't			2051256240			00
+054			4PfQ			0413962011			06
+055			5q6'			2555966913			03
+056			CJ#Z			1930879864			04
+057			pnhQ			1672933863			03
+058			Wnqi			2087974217			02
+059			YnAa			0111987383			08
+060			CELu			3157696707			12
+061			7w.m			0560918767			07
+062			Nqf0			1537797561			06
+063			2HHf			2040999964			04
+064			pMN.			0825345941			11
+065			5MKt			3932024047			07
+066			Yw4T			0784978762			07
+067			-U-U			2427942424			04
+068			sZg.			4283532600			00
+069			oxJT			2764355005			10
+070			pQA.			2406104154			09
+071			qA?'			3146764224			09
+072			GACZ			1064837975			05
+073			AiQ6			4137318007			07
+074			sOxm			0779156421			06
+075			7cKs			2941321108			13
+076			o9Co			1430351378			08
+077			avuH			3086007834			09
+078			tcKm			1361248517			02
+079			,A!v			1216004806			01
+080			VX7K			2751466710			00
+081			saMc			2901249380			05
+082			?eR7			1331180643			03
+083			v,NB			0012299638			13
+084			2bdm			0787940321			11
+085			?cL5			0983996721			06
+086			J6ZW			3267886865			05
+087			6o8h			3852148793			08
+088			eBP!			3266827442			02
+089			!fWX			0542977312			07
+090			'mse			4010153868			03
+091			!5nR			2262249508			13
+092			9'ED			3920102215			10
+093			WB55			0377617973			08
+094			d-M?			0701824591			01
+095			NriW			0170438390			05
+096			BFBR			3287742500			05
+097			HTtw			1912104143			08
+098			16p4			3707141839			04
+099			iiR0			3707560782			12
+100			cF10			4281950684			14
+duplicate data, data = KKVG, hashIndex = 00, chainIndex = 0
+duplicate data, data = EKJ4, hashIndex = 05, chainIndex = 0
+duplicate data, data = d?YJ, hashIndex = 09, chainIndex = 1
+duplicate data, data = AiQ6, hashIndex = 07, chainIndex = 8
+duplicate data, data = AiQ6, hashIndex = 07, chainIndex = 8
+duplicate data, data = !5nR, hashIndex = 13, chainIndex = 7
+duplicate data, data = cF10, hashIndex = 14, chainIndex = 0
+duplicate data, data = !5nR, hashIndex = 13, chainIndex = 7
+allocated 100 list elements containing data
+hash table index 00 -> KKVG -> 5OEh -> -4pW -> Kjqi -> iz't -> sZg. -> VX7K
+hash table index 01 -> C3BW -> ,OPz -> CT96 -> ,A!v -> d-M?
+hash table index 02 -> OnY1 -> JzNH -> cvbH -> Wnqi -> tcKm -> eBP!
+hash table index 03 -> 10Y8 -> ABAV -> 0#7n -> 5q6' -> pnhQ -> ?eR7 -> 'mse
+hash table index 04 -> UtUX -> 13?M -> A,FB -> 0ht5 -> CJ#Z -> 2HHf -> -U-U -> 16p4
+hash table index 05 -> EKJ4 -> 6ePx -> ?nfg -> GACZ -> saMc -> J6ZW -> NriW -> BFBR
+hash table index 06 -> q4Ld -> #oS? -> 8!NR -> zMO5 -> 4PfQ -> Nqf0 -> sOxm -> ?cL5
+hash table index 07 -> kqIJ -> uo2A -> a58G -> bUup -> kvKc -> 7w.m -> 5MKt -> Yw4T -> AiQ6 -> !fWX
+hash table index 08 -> C6B6 -> a7!u -> YnAa -> o9Co -> 6o8h -> WB55 -> HTtw
+hash table index 09 -> gi8A -> d?YJ -> qLWY -> lyj# -> BIsV -> pQA. -> qA?' -> avuH
+hash table index 10 -> 8IZl -> TQgA -> X6Mi -> oxJT -> 9'ED
+hash table index 11 -> 6ivP -> QIW9 -> IWfw -> HCDS -> pMN. -> 2bdm
+hash table index 12 -> cOKJ -> W9OC -> ONt3 -> PHr8 -> CELu -> iiR0
+hash table index 13 -> W0E4 -> bZ5g -> JIv! -> 3ZAE -> JaqU -> 7cKs -> v,NB -> !5nR
+hash table index 14 -> cF10
+deallocated 100 list elements containing data
