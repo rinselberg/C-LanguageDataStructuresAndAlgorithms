@@ -12,8 +12,9 @@ used as the hash keys or inputs to the hashing function, and the strings are the
 hash table with separate chaining for collision resolution algorithm.
 
 The hashing is a two-step process. The first step takes the data string as input and uses a variant of the FNV hashing
-algorithm. I found a C language implementation of this and modified it slightly to use for myself. (I would include the
-address of the web page where I found the code, but I have lost track of that.)
+algorithm. I found a C language implementation of this and modified it slightly to use for myself. The link:
+
+http://www.partow.net/programming/hashfunctions/index.html#RSHashFunction
 
 The FNV algorithm (as it is implemented) produces a very large ("gi-normous") hash space. I have the FNV hash codes in
 my output file, under the column heading of "raw hash value". The second step is to reduce this large FNV hash space 
