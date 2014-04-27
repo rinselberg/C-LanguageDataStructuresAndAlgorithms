@@ -1,35 +1,42 @@
 /* README, followed by C language program, followed by output data */
 
-The program reads a comma or blank separated list of integer-valued keys from the input file (inputFile.txt)
+A B-tree (or Bayer tree) is a multiway or generalized n-ary branching data structure or tree.
+
+The B-tree has been used to implement many of the most commonly used relational and SQL database products and
+filesystems.
+
+This program reads a comma or blank separated list of integer-valued keys from the input file (inputFile.txt)
 and creates a Bayer tree or "B-tree" from the input data.
 
 All output data goes to the output file (outputFile.txt).
 
-After all the input data is processed and the specified outputs are produced, the program dumps all of the B-tree data,
-node by node, starting with the root node.
+After all the input data is processed and the specified outputs are produced, the program dumps all of the B-tree
+data, node by node, starting with the root node.
 
-I used a preprocessor declaration of #define NODESIZE 4 to set the maximum number of keys stored at a single node to 4.
+I used a preprocessor declaration of #define NODESIZE to set the maximum number of keys stored at a single node.
+By definition, each node has a maximum of NODESIZE + 1 branches or descendants. The output data (after the C code)
+is generated with #define NODESIZE 4. So each node contains a maximum of 4 key values and has a maximum of 5 branches
+or descendants.
 
-I have checked the complete output data for NODESIZE 4, number by number, and I find no errors in the construction
+I have checked the complete output data (for NODESIZE 4), number by number, and I find no errors in the construction
 of the B-tree.
 
 Here are the results from running the program with different values for NODESIZE:
 
-NODESIZE		NODES	KEYS	COMMENTS
- 0			     -		-			compiles but fails on unterminated loop
- 1				   78		30		generates 48 nodes without any key values
- 2			   	 26		30		generates a few nodes without any key values
- 3				   14		30		from this point on, no nodes are generated without at least 1 key value
- 4				   12		30
- 5				   10		30
- 6			 	    7		30
- 7				    7		30
- 8				    6		30
- 9				    6		30
-10				    5		30
-17			      4		30
-30				    1		30
-44				    1		30
+NODESIZE	NUMBER OF NODES		NUMBER OF KEYS		COMMENTS
+ 1		78			30			generates 48 nodes without any key values
+ 2		26			30			generates a few nodes without any key values
+ 3		14			30			from this point on, all nodes have at least 1 key value
+ 4		12			30
+ 5		10			30
+ 6		 7			30
+ 7		 7			30
+ 8		 6			30
+ 9		 6			30
+10		 5			30
+17		 4			30
+30		 1			30
+44		 1			30
 
 /******************************************************************************/
 /******************************* prologue *************************************/
